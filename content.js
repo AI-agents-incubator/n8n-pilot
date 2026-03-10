@@ -14,6 +14,7 @@
   let _panelHost = null;
   let _keepAliveInterval = null;
   let _chatHandlers = null;
+  let _contextCleanup = null;
 
   // --- Panel Creation ---
 
@@ -124,6 +125,9 @@
 
         // Load data on open
         if (viewId === 'settingsView') loadSettingsData();
+        if (viewId === 'workflowsView') loadWorkflows($, _msg);
+        if (viewId === 'executionsView') loadExecutions($, _msg);
+        if (viewId === 'historyView') loadHistoryView($, _msg);
       }
     }
 
@@ -154,6 +158,26 @@
       startKeepAlive,
       stopKeepAlive,
     });
+
+    // --- Context Badge ---
+    updateContextBadge($);
+
+    // Watch for SPA navigation changes
+    _contextCleanup = watchN8nContext(() => {
+      updateContextBadge($);
+    });
+
+    // --- Search/Filter listeners for drawers ---
+    const workflowSearch = $('workflowSearch');
+    const workflowFilter = $('workflowFilter');
+    if (workflowSearch) workflowSearch.addEventListener('input', () => filterListItems($, 'workflowsList', workflowSearch.value, workflowFilter?.value));
+    if (workflowFilter) workflowFilter.addEventListener('change', () => filterListItems($, 'workflowsList', workflowSearch?.value, workflowFilter.value));
+
+    const execStatusFilter = $('executionStatusFilter');
+    if (execStatusFilter) execStatusFilter.addEventListener('change', () => loadExecutions($, _msg));
+
+    const historySearch = $('historySearch');
+    if (historySearch) historySearch.addEventListener('input', () => filterListItems($, 'historyList', historySearch.value));
 
     // --- Status Bar ---
     updateStatusBar($);
@@ -986,6 +1010,268 @@
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+  }
+
+  // --- Context Awareness ---
+
+  function extractWorkflowIdFromPage() {
+    const url = window.location.href;
+    const match = url.match(/\/workflow\/([a-zA-Z0-9_-]+)/);
+    return match ? match[1] : null;
+  }
+
+  function updateContextBadge($) {
+    const contextName = $('contextName');
+    if (!contextName) return;
+
+    const workflowId = extractWorkflowIdFromPage();
+    if (workflowId) {
+      // Try to get workflow name from DOM
+      const nameInput = document.querySelector('[data-test-id="workflow-name-input"]');
+      const name = nameInput?.value || nameInput?.textContent || `Workflow ${workflowId}`;
+      contextName.textContent = name;
+      contextName.title = `ID: ${workflowId}`;
+    } else {
+      contextName.textContent = 'No workflow';
+      contextName.title = '';
+    }
+  }
+
+  function watchN8nContext(onChange) {
+    let lastId = extractWorkflowIdFromPage();
+
+    const check = () => {
+      const newId = extractWorkflowIdFromPage();
+      if (newId !== lastId) {
+        lastId = newId;
+        onChange();
+      }
+    };
+
+    // Watch popstate
+    window.addEventListener('popstate', check);
+
+    // Intercept pushState
+    const origPush = history.pushState.bind(history);
+    const origReplace = history.replaceState.bind(history);
+
+    history.pushState = function (...args) {
+      origPush(...args);
+      setTimeout(check, 50);
+    };
+    history.replaceState = function (...args) {
+      origReplace(...args);
+      setTimeout(check, 50);
+    };
+
+    // Watch title
+    const obs = new MutationObserver(check);
+    const titleEl = document.querySelector('title');
+    if (titleEl) obs.observe(titleEl, { childList: true, characterData: true, subtree: true });
+
+    return () => {
+      window.removeEventListener('popstate', check);
+      history.pushState = origPush;
+      history.replaceState = origReplace;
+      obs.disconnect();
+    };
+  }
+
+  // --- Workflows View ---
+
+  async function loadWorkflows($, msgFn) {
+    const list = $('workflowsList');
+    if (!list) return;
+    list.innerHTML = '<div class="list-empty">Loading...</div>';
+
+    try {
+      const result = await msgFn('listWorkflows');
+      const workflows = result?.data || (Array.isArray(result) ? result : []);
+      list.innerHTML = '';
+
+      if (workflows.length === 0) {
+        list.innerHTML = '<div class="list-empty">No workflows found</div>';
+        return;
+      }
+
+      workflows.forEach(wf => {
+        const item = document.createElement('div');
+        item.className = 'list-item';
+        item.dataset.name = (wf.name || '').toLowerCase();
+        item.dataset.active = wf.active ? 'true' : 'false';
+
+        const statusClass = wf.active ? 'active' : 'inactive';
+        const updatedText = _timeAgo(wf.updatedAt);
+        const nodeCount = wf.nodes?.length || '?';
+
+        item.innerHTML = `
+          <div class="list-item-header">
+            <span class="list-item-title">${_escapeHtml(wf.name || 'Untitled')}</span>
+            <span class="badge ${statusClass}">${wf.active ? 'Active' : 'Inactive'}</span>
+          </div>
+          <div class="list-item-meta">${nodeCount} nodes \u00b7 ${updatedText}</div>
+          <div class="list-item-actions">
+            <button class="btn btn-secondary btn-sm btn-toggle-wf">${wf.active ? 'Deactivate' : 'Activate'}</button>
+          </div>
+        `;
+
+        item.querySelector('.btn-toggle-wf')?.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          try {
+            await msgFn(wf.active ? 'deactivateWorkflow' : 'activateWorkflow', { id: wf.id });
+            loadWorkflows($, msgFn);
+          } catch (err) {
+            console.error('[n8n Pilot] Toggle workflow error:', err);
+          }
+        });
+
+        list.appendChild(item);
+      });
+    } catch (err) {
+      list.innerHTML = `<div class="list-empty">Error: ${_escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  // --- Executions View ---
+
+  async function loadExecutions($, msgFn) {
+    const list = $('executionsList');
+    if (!list) return;
+    list.innerHTML = '<div class="list-empty">Loading...</div>';
+
+    try {
+      const statusFilter = $('executionStatusFilter');
+      const params = {};
+      if (statusFilter && statusFilter.value !== 'all') {
+        params.status = statusFilter.value;
+      }
+
+      const result = await msgFn('listExecutions', { params });
+      const executions = result?.data || (Array.isArray(result) ? result : []);
+      list.innerHTML = '';
+
+      if (executions.length === 0) {
+        list.innerHTML = '<div class="list-empty">No executions found</div>';
+        return;
+      }
+
+      executions.forEach(exec => {
+        const item = document.createElement('div');
+        item.className = 'list-item';
+
+        const statusClass = exec.status === 'success' ? 'success' :
+          exec.status === 'error' ? 'error' : 'warning';
+        const wfName = exec.workflowData?.name || `Workflow #${exec.workflowId || '?'}`;
+        const startedText = _timeAgo(exec.startedAt);
+        let duration = '';
+        if (exec.stoppedAt && exec.startedAt) {
+          const ms = new Date(exec.stoppedAt) - new Date(exec.startedAt);
+          duration = `${Math.round(ms / 1000)}s`;
+        } else {
+          duration = 'Running...';
+        }
+
+        item.innerHTML = `
+          <div class="list-item-header">
+            <span class="list-item-title">${_escapeHtml(wfName)}</span>
+            <span class="badge ${statusClass}">${exec.status || 'unknown'}</span>
+          </div>
+          <div class="list-item-meta">${startedText} \u00b7 ${duration}</div>
+        `;
+
+        list.appendChild(item);
+      });
+    } catch (err) {
+      list.innerHTML = `<div class="list-empty">Error: ${_escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  // --- History View ---
+
+  async function loadHistoryView($, msgFn) {
+    const list = $('historyList');
+    if (!list) return;
+    list.innerHTML = '<div class="list-empty">Loading...</div>';
+
+    try {
+      const result = await msgFn('getHistory');
+      const items = result?.items || (Array.isArray(result) ? result : []);
+      list.innerHTML = '';
+
+      if (items.length === 0) {
+        list.innerHTML = '<div class="list-empty">No history yet</div>';
+        return;
+      }
+
+      items.forEach(entry => {
+        const item = document.createElement('div');
+        item.className = 'list-item';
+
+        const promptExcerpt = (entry.prompt || '').substring(0, 60) +
+          ((entry.prompt || '').length > 60 ? '...' : '');
+        const model = entry.model || 'unknown';
+        const tokens = entry.tokensUsed || 0;
+        const timeText = _timeAgo(entry.timestamp);
+
+        item.innerHTML = `
+          <div class="list-item-header">
+            <span class="list-item-title">${_escapeHtml(promptExcerpt)}</span>
+          </div>
+          <div class="list-item-meta">${model} \u00b7 ${tokens} tokens \u00b7 ${timeText}</div>
+          <div class="list-item-actions">
+            <button class="btn btn-secondary btn-sm btn-delete-history">Delete</button>
+          </div>
+        `;
+
+        item.querySelector('.btn-delete-history')?.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          try {
+            await msgFn('deleteHistoryEntry', { id: entry.id });
+            loadHistoryView($, msgFn);
+          } catch (err) {
+            console.error('[n8n Pilot] Delete history error:', err);
+          }
+        });
+
+        list.appendChild(item);
+      });
+    } catch (err) {
+      list.innerHTML = `<div class="list-empty">Error: ${_escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  // --- List Filtering ---
+
+  function filterListItems($, listId, searchTerm, statusFilter) {
+    const list = $(listId);
+    if (!list) return;
+    const term = (searchTerm || '').toLowerCase();
+    const filter = statusFilter || 'all';
+
+    list.querySelectorAll('.list-item').forEach(item => {
+      const name = item.dataset.name || item.textContent.toLowerCase();
+      const isActive = item.dataset.active;
+
+      const matchesSearch = !term || name.includes(term);
+      const matchesFilter = filter === 'all' ||
+        (filter === 'active' && isActive === 'true') ||
+        (filter === 'inactive' && isActive === 'false');
+
+      item.style.display = matchesSearch && matchesFilter ? '' : 'none';
+    });
+  }
+
+  // --- Utility ---
+
+  function _timeAgo(isoString) {
+    if (!isoString) return 'Unknown';
+    const date = new Date(isoString);
+    const now = new Date();
+    const seconds = Math.floor((now - date) / 1000);
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
   }
 
   // --- Auto-create panel on load ---
