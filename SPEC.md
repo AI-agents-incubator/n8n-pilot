@@ -1,9 +1,9 @@
 # n8n Pilot — Техническое задание и спецификация
 
-**Версия:** 2.0
+**Версия:** 3.0
 **Дата:** 2026-03-10
 **Автор:** Alex Krol + Claude
-**Статус:** Active — synced with code as of v1.0.0
+**Статус:** Active — architecture pivot v2.0 (popup → injected side panel + smart generator)
 
 ---
 
@@ -123,56 +123,85 @@ git status / git diff     # Проверка состояния
 
 ## 2. Архитектура
 
+> **PIVOT v2.0:** Popup заменён на injected side panel в DOM n8n-редактора.
+> Причина: popup закрывается при клике вне него, не имеет доступа к DOM n8n,
+> не поддерживает streaming и контекстное меню. Конкурент N8N Master (5000 юзеров)
+> использует injected panel — это стандарт UX для n8n-расширений.
+
 ### 2.1 Высокоуровневая архитектура
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    Chrome Browser                     │
-│                                                       │
-│  ┌──────────┐  ┌──────────────┐  ┌────────────────┐ │
-│  │  Popup    │  │  Background  │  │ Content Script │ │
-│  │  (UI)     │◄─►  Service    │◄─► (n8n pages     │ │
-│  │           │  │  Worker      │  │  only)         │ │
-│  └──────────┘  └──────┬───────┘  └────────────────┘ │
-│                        │                              │
-│                        ▼                              │
-│                ┌───────────────┐                      │
-│                │chrome.storage │                      │
-│                │   .local      │                      │
-│                └───────────────┘                      │
-└────────────────────────┬─────────────────────────────┘
-                         │ HTTPS (direct)
-              ┌──────────┴──────────┐
-              ▼                     ▼
-     ┌──────────────┐    ┌──────────────────┐
-     │ Anthropic API │    │  Self-hosted n8n  │
-     │ api.anthropic │    │  (user's server)  │
-     │   .com        │    │                   │
-     └──────────────┘    └──────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                         Chrome Browser                            │
+│                                                                    │
+│  ┌──────────────────────────────────────────────────────────────┐ │
+│  │                    n8n Editor Tab                              │ │
+│  │                                                                │ │
+│  │  ┌──────────────────────────┐  ┌──────────────────────────┐  │ │
+│  │  │     n8n Canvas           │  │   n8n Pilot Panel        │  │ │
+│  │  │   (workflow editor)      │  │   (Shadow DOM, 380px)    │  │ │
+│  │  │                          │  │                          │  │ │
+│  │  │   content.js detects     │  │   Chat / Settings /      │  │ │
+│  │  │   workflow context       │  │   Workflows / Executions │  │ │
+│  │  └──────────────────────────┘  └──────────────────────────┘  │ │
+│  └──────────────────────────────────────────────────────────────┘ │
+│                                                                    │
+│  ┌──────────────┐                  ┌───────────────┐              │
+│  │  Background   │ ◄── messages ──► │chrome.storage │              │
+│  │  Service      │                  │   .local      │              │
+│  │  Worker       │                  └───────────────┘              │
+│  └──────┬────────┘                                                 │
+│          │ streaming relay (SSE chunks → tabs.sendMessage)         │
+└──────────┼─────────────────────────────────────────────────────────┘
+           │ HTTPS (direct)
+  ┌────────┴────────┐
+  ▼                 ▼
+┌──────────────┐  ┌──────────────────┐
+│ Anthropic API │  │  Self-hosted n8n  │
+│ (streaming    │  │  v2.1.5           │
+│  SSE support) │  │  (user's server)  │
+└──────────────┘  └──────────────────┘
 ```
 
 ### 2.2 Компоненты
 
 #### 2.2.1 Background Service Worker (`background.js`)
-- Центральный хаб всей логики
-- Обработка сообщений от popup и content script
-- Прямые вызовы к Anthropic API
+- Центральный хаб всей логики (без изменений бизнес-логики)
+- Обработка сообщений от **panel** (content script) — НЕ от popup
+- Прямые вызовы к Anthropic API (включая **streaming SSE**)
 - Прямые вызовы к n8n REST API
+- **Streaming relay:** получает SSE chunks от Claude, пересылает в content script через `chrome.tabs.sendMessage`
 - Управление chrome.storage
 - Шифрование/дешифрование API-ключей
-- Валидация и нормализация workflow JSON
+- Регистрация context menu items
+- Toggle panel по клику на иконку расширения (`chrome.action.onClicked`)
 
-#### 2.2.2 Popup UI (`popup.html` + `popup.js` + `popup.css`)
-- Основной интерфейс пользователя
-- Вкладки: Generate, Workflows, Executions, History, Settings
-- Тёмная тема (согласованная с n8n)
-- Responsive: 420px ширина
+#### 2.2.2 Injected Side Panel (`panel/` + `content.js`)
+- **Заменяет popup.html/js/css** — popup удалён
+- Content script (`content.js`) инжектит panel в DOM n8n через **closed Shadow DOM**
+- Panel UI: chat-first интерфейс + drawer-views (Settings, Workflows, Executions, History)
+- Прямой доступ к DOM n8n — контекст workflow, выбранные ноды, URL
+- Streaming: ответы Claude появляются token-by-token
+- Per-workflow chat memory
+- CSS изолирован через Shadow DOM (n8n CSS не влияет на panel и наоборот)
+- Ширина: 380px (collapsible to 48px icon strip)
 
-#### 2.2.3 Content Script (`content.js`)
-- Инъекция ТОЛЬКО на страницы n8n (не на все сайты)
-- Отображение уведомлений на странице n8n
-- Инъекция сгенерированных workflows в n8n editor
+#### 2.2.3 Content Script — Panel Orchestrator (`content.js`)
+- Инъекция панели в DOM n8n при загрузке страницы
+- Shadow DOM создание и управление
+- Определение контекста: текущий workflow (URL parsing), выбранные ноды (DOM queries)
+- SPA navigation watching (MutationObserver + popstate)
+- Workflow injection в n8n editor (clipboard + paste simulation)
 - Отслеживание сохранения workflows для версионирования
+- Обработка context menu actions
+- Приём streaming chunks от background.js
+
+#### 2.2.4 Smart Generator Pipeline (NEW)
+- **Guided Dialog** (panel/chat.js) → структурированное описание задачи
+- **Prompt Analyzer** (lib/prompt-analyzer.js) → маппинг на ноды из каталога
+- **Node Catalog** (lib/node-catalog-core.js + node-catalog-index.js) → параметры нод
+- **JSON Generator** (lib/workflow-generator.js) → финальный workflow JSON
+- Подробнее в разделе 4.5
 
 ### 2.3 Что УБРАНО из оригиналов
 
@@ -198,7 +227,7 @@ git status / git diff     # Проверка состояния
 {
   "manifest_version": 3,
   "name": "n8n Pilot",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "AI-powered n8n workflow manager with Claude integration",
   "author": "Alex Krol",
 
@@ -207,7 +236,8 @@ git status / git diff     # Проверка состояния
     "clipboardWrite",
     "notifications",
     "scripting",
-    "activeTab"
+    "activeTab",
+    "contextMenus"
   ],
 
   "host_permissions": [
@@ -226,7 +256,6 @@ git status / git diff     # Проверка состояния
   },
 
   "action": {
-    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -234,6 +263,13 @@ git status / git diff     # Проверка состояния
       "128": "icons/icon128.png"
     }
   },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["panel/panel.css", "icons/*"],
+      "matches": ["https://*/*", "http://localhost:*/*", "http://127.0.0.1:*/*"]
+    }
+  ],
 
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'none'"
@@ -248,16 +284,20 @@ git status / git diff     # Проверка состояния
 }
 ```
 
+> **PIVOT v2.0:** `action.default_popup` удалён. Клик по иконке → `chrome.action.onClicked` → toggle panel.
+> Добавлены: `contextMenus` permission, `web_accessible_resources` для panel CSS.
+
 ### 3.2 Обоснование permissions
 
 | Permission | Зачем | Альтернатива |
 |------------|-------|--------------|
-| `storage` | Хранение настроек, истории, ключей | Нет — необходим |
-| `clipboardWrite` | Копирование JSON в буфер | Можно убрать, но неудобно |
-| `notifications` | Уведомления о генерации | Можно использовать in-page |
-| `scripting` | Программная инъекция content.js на n8n-таб | Нет — необходим для `chrome.scripting.executeScript` |
+| `storage` | Хранение настроек, истории, ключей, chat memory | Нет — необходим |
+| `clipboardWrite` | Копирование JSON в буфер, workflow injection | Нет — необходим |
+| `notifications` | Уведомления вне n8n-страницы | Можно использовать in-page |
+| `scripting` | Программная инъекция panel scripts на n8n-таб | Нет — необходим для `chrome.scripting.executeScript` |
 | `activeTab` | Доступ к активному табу для инъекции | Нет — необходим |
-| `host_permissions: api.anthropic.com` | Прямые вызовы Claude API | Нет — необходим |
+| `contextMenus` | ПКМ: Explain / Generate Code / Optimize | Нет — необходим для UX |
+| `host_permissions: api.anthropic.com` | Прямые вызовы Claude API (включая streaming) | Нет — необходим |
 | `optional: localhost:*` | Подключение к self-hosted n8n | Запрашивается при настройке |
 | `optional: 127.0.0.1:*` | Альтернативный localhost | Запрашивается при настройке |
 | `optional: https://*/*` | n8n на кастомном домене | Запрашивается при настройке |
@@ -266,21 +306,58 @@ git status / git diff     # Проверка состояния
 
 - `<all_urls>` — НЕТ. Content script инъектируется программно только на n8n
 - `tabs` — НЕТ. Не нужен доступ ко всем вкладкам
-- `content_scripts` в manifest — НЕТ. Программная инъекция через `chrome.scripting.executeScript` вместо декларативной
+- `content_scripts` в manifest — НЕТ. Программная инъекция через `chrome.scripting.executeScript`
+- `default_popup` — УДАЛЁН. UI живёт в injected panel, не в popup
 
-### 3.4 Content Script — программная инъекция
+### 3.4 Panel Script Injection
 
-Вместо `content_scripts` в manifest (которые инъектируются на все matching URLs), используем программную инъекцию только когда нужно:
+Panel инжектится программно при обнаружении n8n-страницы:
 
 ```javascript
-// background.js — инъекция только на конкретный n8n таб
-async function injectContentScript(tabId) {
+// background.js — инъекция panel на n8n таб
+async function injectPanel(tabId) {
+  // Инъекция всех panel-скриптов в правильном порядке
   await chrome.scripting.executeScript({
     target: { tabId },
-    files: ['content.js']
+    files: [
+      'panel/n8n-context.js',    // контекст n8n (workflow ID, selected nodes)
+      'panel/chat-memory.js',     // per-workflow chat storage
+      'panel/chat.js',            // chat interface
+      'panel/settings-view.js',   // settings form
+      'panel/workflows-view.js',  // workflow list
+      'panel/executions-view.js', // executions list
+      'panel/history-view.js',    // history list
+      'panel/context-menu.js',    // right-click handler
+      'panel/panel.js',           // main controller
+      'content.js'                // orchestrator (creates Shadow DOM, bootstraps panel)
+    ]
   });
 }
 ```
+
+### 3.5 Shadow DOM — CSS изоляция
+
+Panel использует closed Shadow DOM для полной изоляции CSS:
+
+```javascript
+// content.js — создание Shadow DOM
+const host = document.createElement('div');
+host.id = 'n8n-pilot-root';
+host.style.cssText = 'position:fixed; top:0; right:0; height:100vh; width:380px; z-index:99999;';
+document.body.appendChild(host);
+
+const shadow = host.attachShadow({ mode: 'closed' });
+
+// CSS загружается из web_accessible_resources
+const link = document.createElement('link');
+link.rel = 'stylesheet';
+link.href = chrome.runtime.getURL('panel/panel.css');
+shadow.appendChild(link);
+```
+
+- `closed` mode: n8n JS не может получить доступ к `host.shadowRoot`
+- CSS variables определены на `:host` вместо `:root`
+- Никакого leakage в обе стороны
 
 ---
 
@@ -394,6 +471,33 @@ interface ClaudeClient {
     maxTokens?: number;
     temperature?: number;
     abortSignal?: AbortSignal;
+  }): Promise<ClaudeResponse>;
+
+  // Streaming generation (NEW in v2.0 — для chat panel)
+  sendMessageStream(params: {
+    systemPrompt: string;
+    userPrompt: string;
+    model?: string;
+    maxTokens?: number;
+    temperature?: number;
+    abortSignal?: AbortSignal;
+    onChunk: (text: string) => void;     // called per SSE delta
+    onDone: (result: { content: string; tokensUsed: TokenUsage }) => void;
+    onError: (error: string) => void;
+  }): Promise<void>;
+
+  // Multi-turn conversation (NEW in v2.0 — для chat memory)
+  sendConversation(params: {
+    systemPrompt: string;
+    messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+    model?: string;
+    maxTokens?: number;
+    temperature?: number;
+    abortSignal?: AbortSignal;
+    stream?: boolean;
+    onChunk?: (text: string) => void;
+    onDone?: (result: { content: string; tokensUsed: TokenUsage }) => void;
+    onError?: (error: string) => void;
   }): Promise<ClaudeResponse>;
 
   // Проверка доступности API (минимальный запрос)
@@ -554,26 +658,137 @@ X-N8N-API-KEY: {apiKey}
 
 ---
 
-### 4.5 Модуль: Workflow Generator
+### 4.5 Модуль: Smart Workflow Generator (PIVOT v2.0)
+
+> **PIVOT:** Одноэтапная генерация заменена на 4-этапный pipeline.
+> Причина: freeform промпт → Claude угадывает ноды → часто сломанный JSON.
+> Новый подход: Guided Dialog → Prompt Analyzer → Node Mapping → JSON Generation.
+
+#### 4.5.1 Pipeline Overview
+
+```
+Step 1: Guided Dialog (panel/chat.js)
+  → "Что запускает workflow?" → Webhook / Schedule / RSS / Manual
+  → "Какие сервисы?" → Telegram, OpenAI, Airtable...
+  → "Что делать с результатом?" → Send / Save / Return
+  → Output: StructuredTask
+
+Step 2: Prompt Analyzer (lib/prompt-analyzer.js) — API call #1
+  → Input: StructuredTask
+  → Checks node-catalog-core.js (20-30 detailed nodes)
+  → Falls back to node-catalog-index.js (~280 brief entries)
+  → Output: WorkflowBlueprint
+
+Step 3: JSON Generation (lib/workflow-generator.js) — API call #2
+  → Input: WorkflowBlueprint + relevant node schemas from catalog
+  → System prompt includes ONLY the node schemas needed (not all 300)
+  → Output: complete n8n workflow JSON
+
+Step 4: Validate + Normalize (lib/workflow-validator.js)
+  → Same as before
+```
+
+#### 4.5.2 Новые модули
+
+**Файл:** `lib/prompt-analyzer.js` (NEW)
+
+```typescript
+interface PromptAnalyzer {
+  // Анализ структурированного запроса → blueprint
+  analyze(params: {
+    task: StructuredTask;
+    model?: string;
+    abortSignal?: AbortSignal;
+  }): Promise<AnalysisResult>;
+}
+
+interface StructuredTask {
+  trigger: string;            // "webhook" | "schedule" | "rss" | "manual" | описание
+  services: string[];         // ["telegram", "openai", "airtable"]
+  outputAction: string;       // "send" | "save" | "return" | описание
+  description: string;        // freeform дополнение
+  context?: object;           // текущий workflow (если модификация)
+}
+
+interface WorkflowBlueprint {
+  nodes: Array<{
+    type: string;             // "n8n-nodes-base.webhook"
+    role: string;             // "trigger" | "process" | "output"
+    params_hint: object;      // ключевые параметры из каталога
+    credentials_type?: string; // "telegramApi" | "openAiApi" | etc.
+  }>;
+  connections: Array<[number, number]>;  // [fromIndex, toIndex]
+  credentials_needed: string[];           // credential types to resolve
+}
+```
+
+**Файл:** `lib/node-catalog-core.js` (NEW)
+
+Содержит полные параметры для 20-30 самых используемых нод, извлечённые из `description.ts` файлов репозитория n8n (https://github.com/n8n-io/n8n/tree/master/packages/nodes-base/nodes).
+
+```typescript
+// Формат записи в каталоге
+interface NodeSchema {
+  type: string;                 // "n8n-nodes-base.webhook"
+  displayName: string;          // "Webhook"
+  typeVersion: number;          // 2.1
+  category: string;             // "Triggers"
+  credentials: string[];        // ["webhookAuth"] — типы credentials
+  parameters: ParameterDef[];   // полное описание параметров
+  outputs: number;              // количество выходов (1 для обычных, 2 для IF)
+  description: string;          // краткое описание
+}
+
+// Ноды в core-каталоге:
+// webhook, httpRequest, code, if, filter, switch, set, merge, splitOut,
+// scheduleTrigger, manualTrigger, telegram, gmail, airtable, openAi,
+// googleGemini, rssFeedReadTrigger, convertToFile, html, stickyNote,
+// splitInBatches, wait, noOp, formTrigger
+```
+
+**Файл:** `lib/node-catalog-index.js` (NEW)
+
+Содержит краткие описания ~280 оставшихся нод для маппинга:
+
+```typescript
+interface NodeIndexEntry {
+  type: string;                 // "n8n-nodes-base.slack"
+  displayName: string;          // "Slack"
+  category: string;             // "Communication"
+  credentials: string;          // "slackApi"
+  description: string;          // "Send messages, manage channels in Slack"
+}
+```
+
+#### 4.5.3 Обновлённый Workflow Generator
 
 **Файл:** `lib/workflow-generator.js`
 
-**Назначение:** Генерация n8n workflow JSON через Claude. Включает system prompt, валидацию, нормализацию.
-
 ```typescript
 interface WorkflowGenerator {
-  // Основная генерация
+  // Полный pipeline: blueprint → JSON
+  generateFromBlueprint(params: {
+    blueprint: WorkflowBlueprint;
+    nodeSchemas: NodeSchema[];    // только нужные, из каталога
+    model?: string;
+    abortSignal?: AbortSignal;
+    stream?: boolean;
+    onChunk?: (text: string) => void;
+  }): Promise<GenerationResult>;
+
+  // Legacy: прямая генерация из промпта (для обратной совместимости)
   generate(params: {
     prompt: string;
-    model?: string;              // model override
+    model?: string;
     abortSignal?: AbortSignal;
+    onProgress?: (msg: string) => void;
   }): Promise<GenerationResult>;
 
   // Модификация существующего workflow
   modify(params: {
     workflow: object;
     instruction: string;
-    model?: string;              // model override
+    model?: string;
     abortSignal?: AbortSignal;
   }): Promise<GenerationResult>;
 
@@ -589,44 +804,38 @@ interface GenerationResult {
   tokensUsed: { input: number; output: number };
   duration: number;
   validationErrors: string[];
+  validationWarnings?: string[];
   error?: string;
 }
 ```
 
-**System Prompt (основа — из n8n Copilot, но переработан):**
+#### 4.5.4 System Prompt (динамический)
+
+System prompt теперь **не hardcoded**, а собирается динамически на основе blueprint:
 
 ```
-You are an expert n8n workflow builder. Your task is to generate valid n8n workflow JSON based on user descriptions.
+STATIC PART (всегда включена):
+- Правила JSON формата
+- Node structure, Connection structure
+- Positioning rules
+- Expression syntax: {{ $json.field }}
 
-CRITICAL RULES:
-1. Return ONLY valid JSON. No markdown, no explanations, no code blocks.
-2. The JSON must be a complete n8n workflow object with these required fields:
-   - name: string (descriptive workflow name)
-   - nodes: array of node objects
-   - connections: object mapping node connections
-   - settings: object with workflow settings
+DYNAMIC PART (добавляется из каталога):
+- Полные параметры ТОЛЬКО для нод из blueprint
+- Формат credentials reference
+- Resource Locator (__rl) pattern где нужно
+```
 
-NODE STRUCTURE:
-Each node must have:
-- id: unique UUID string
-- name: string (descriptive, unique within workflow)
-- type: string (valid n8n node type, e.g. "n8n-nodes-base.webhook")
-- typeVersion: number (use latest stable version)
-- position: [x, y] array (spread nodes horizontally, ~300px apart)
-- parameters: object (node-specific configuration)
+Это критичное улучшение: вместо того чтобы надеяться, что Claude угадает параметры из обучающих данных, мы передаём точные схемы из n8n source code.
 
-CONNECTION STRUCTURE:
-connections: {
-  "NodeName": {
-    "main": [[{ "node": "NextNodeName", "type": "main", "index": 0 }]]
-  }
-}
+#### 4.5.5 Источник данных для каталога нод
 
-WORKFLOW SETTINGS:
-settings: {
-  "executionOrder": "v1"
-}
+Данные извлекаются из:
+- `https://github.com/n8n-io/n8n/tree/master/packages/nodes-base/nodes/{NodeName}/description.ts` — полные параметры
+- `https://github.com/n8n-io/n8n/tree/master/packages/nodes-base/nodes/{NodeName}/__schema__/vX.Y.Z/output.json` — output schema
+- `example/` — 6 реальных workflow JSON из n8n 2.1.5 пользователя (верифицированные рабочие конфигурации)
 
+Каталог хранится статически в JS-файлах (не загружается на лету). Обновляется при смене версии n8n.
 COMMON NODE TYPES:
 - Trigger: n8n-nodes-base.webhook, n8n-nodes-base.scheduleTrigger, n8n-nodes-base.manualTrigger
 - HTTP: n8n-nodes-base.httpRequest
@@ -877,199 +1086,149 @@ type PopupMessage =
 
 ---
 
-## 5. UI/UX Спецификация
+## 5. UI/UX Спецификация (PIVOT v2.0)
 
-### 5.1 Popup Layout
+> **PIVOT:** Popup (420x520px) заменён на injected side panel в DOM n8n-редактора.
+> Chat-first интерфейс. Secondary views (Workflows, Executions, History) — drawer overlays.
 
-```
-┌─────────────────────────────────┐
-│  ⚡ n8n Pilot          [⚙️]    │  ← Header + Settings gear
-├─────────────────────────────────┤
-│ [Generate] [Workflows] [Exec]   │  ← Tab bar
-│ [History]  [Debug]              │
-├─────────────────────────────────┤
-│                                  │
-│     Tab Content Area             │  ← Dynamic content
-│     (scrollable)                 │
-│                                  │
-│                                  │
-│                                  │
-│                                  │
-├─────────────────────────────────┤
-│ 🟢 Connected to n8n             │  ← Status bar
-└─────────────────────────────────┘
-```
-
-**Размеры:** 420px x 600px (min), расширяется по контенту до 800px высота
-
-### 5.2 Вкладка: Generate
+### 5.1 Panel Layout (injected в n8n editor)
 
 ```
-┌─────────────────────────────────┐
-│ Prompt:                          │
-│ ┌───────────────────────────┐   │
-│ │ Describe your workflow... │   │
-│ │                           │   │
-│ │                           │   │
-│ └───────────────────────────┘   │
-│                                  │
-│ Model: [claude-sonnet-4-20250514 ▼]│
-│                                  │
-│ [🔮 Generate Workflow]           │
-│                                  │
-│ ─── Output ────────────────────  │
-│ ┌───────────────────────────┐   │
-│ │ {                         │   │
-│ │   "name": "My Workflow",  │   │
-│ │   "nodes": [...]          │   │
-│ │ }                         │   │
-│ └───────────────────────────┘   │
-│                                  │
-│ [📋 Copy] [💾 Save] [🚀 Inject] │
-│ [📁 Download JSON]              │
-└─────────────────────────────────┘
+┌─────────────────────────────────────────────┬──────────────────────────────┐
+│                                             │ ⚡ n8n Pilot    [W][E][H][⚙] │ ← Header + view icons
+│                                             ├──────────────────────────────┤
+│         n8n Canvas Editor                   │ Context: My Workflow (abc123)│ ← Auto-detected
+│         (workflow nodes)                    ├──────────────────────────────┤
+│                                             │                              │
+│         margin-right: 380px                 │  [assistant] Привет! Что     │ ← Chat messages
+│         (pushed left when panel open)       │  создаём сегодня?            │
+│                                             │                              │
+│                                             │  [user] Нужен webhook →      │
+│                                             │  Telegram notification       │
+│                                             │                              │
+│                                             │  [assistant] streaming...    │ ← Real-time SSE
+│                                             │  ┌─ Workflow Card ─────────┐ │
+│                                             │  │ "Webhook → Telegram"    │ │
+│                                             │  │ 3 nodes · valid         │ │
+│                                             │  │ [Copy] [Inject] [Save]  │ │
+│                                             │  └────────────────────────┘ │
+│                                             ├──────────────────────────────┤
+│                                             │ [📎] Type message... [Send]  │ ← Input
+│                                             ├──────────────────────────────┤
+│                                             │ 🟢 Connected · 342/1.2k tok │ ← Status
+└─────────────────────────────────────────────┴──────────────────────────────┘
+       ~calc(100vw - 380px)                              380px
 ```
 
-### 5.3 Вкладка: Workflows
+**Размеры:** 380px ширина (фиксированная), 100vh высота.
+Collapsible: при сворачивании → 48px icon strip с логотипом.
+Drag-handle: пользователь может расширять до 600px.
+
+### 5.2 Chat Interface (основной вид)
 
 ```
-┌─────────────────────────────────┐
-│ 🔍 Search workflows...          │
-│ Filter: [All ▼] [Active ▼]     │
-│                                  │
-│ ┌───────────────────────────┐   │
-│ │ ▶ Email Notification       │   │
-│ │   Active · Updated 2h ago  │   │
-│ │   [Edit] [Toggle] [Delete] │   │
-│ ├───────────────────────────┤   │
-│ │ ⏸ Data Backup              │   │
-│ │   Inactive · Updated 1d    │   │
-│ │   [Edit] [Toggle] [Delete] │   │
-│ ├───────────────────────────┤   │
-│ │ ▶ Webhook Handler          │   │
-│ │   Active · Updated 5m ago  │   │
-│ │   [Edit] [Toggle] [Delete] │   │
-│ └───────────────────────────┘   │
-│                                  │
-│ [+ New Workflow] [📥 Import]     │
-└─────────────────────────────────┘
+┌──────────────────────────────┐
+│ Message list (scrollable)     │
+│                               │
+│ [assistant bubble]            │  ← markdown rendering
+│ [user bubble]                 │  ← plain text
+│ [assistant bubble streaming]  │  ← token-by-token
+│                               │
+│ ── Workflow Card ────────── │  ← extracted from JSON in response
+│ │ name, node count, status   │
+│ │ [Copy] [Inject] [Save]     │
+│ └─────────────────────────── │
+│                               │
+├──────────────────────────────┤
+│ [📎 Attach WF] [input] [⏎]  │  ← input area
+└──────────────────────────────┘
 ```
 
-### 5.4 Вкладка: Executions
+**Guided Dialog Mode** (при клике "New workflow" или первом сообщении):
+1. Bot: "Что должно запускать этот workflow?" → кнопки: Webhook / Schedule / RSS / Manual / Other
+2. Bot: "Какие сервисы нужны?" → multi-select с иконками нод
+3. Bot: "Что делать с результатом?" → Send / Save / Return / Other
+4. Bot: "Дополнительные детали?" → freeform textarea
+5. → StructuredTask → Prompt Analyzer → Generation
 
-```
-┌─────────────────────────────────┐
-│ Workflow: [All workflows ▼]      │
-│ Status:  [All ▼]                │
-│                                  │
-│ ┌───────────────────────────┐   │
-│ │ ✅ Email Notification      │   │
-│ │   Success · 2 min ago      │   │
-│ │   Duration: 1.2s           │   │
-│ ├───────────────────────────┤   │
-│ │ ❌ Data Backup             │   │
-│ │   Error · 15 min ago       │   │
-│ │   "Connection timeout"     │   │
-│ ├───────────────────────────┤   │
-│ │ ✅ Webhook Handler         │   │
-│ │   Success · 1h ago         │   │
-│ │   Duration: 0.3s           │   │
-│ └───────────────────────────┘   │
-│                                  │
-│ Showing 3 of 127 executions      │
-│ [Load more...]                   │
-└─────────────────────────────────┘
-```
+### 5.3 Drawer Views (overlay поверх чата)
 
-### 5.5 Вкладка: History
+При клике на иконки [W][E][H][⚙] в header открывается drawer, закрывающий чат:
 
+**[W] Workflows:**
 ```
-┌─────────────────────────────────┐
-│ Generation History               │
-│ 🔍 Search prompts...            │
-│                                  │
-│ ┌───────────────────────────┐   │
-│ │ "Create webhook that..."   │   │
-│ │ claude-sonnet · 2h ago     │   │
-│ │ 1.2k tokens · 3.4s        │   │
-│ │ [View] [Re-gen] [Delete]  │   │
-│ ├───────────────────────────┤   │
-│ │ "Build email pipeline..."  │   │
-│ │ claude-sonnet · 1d ago     │   │
-│ │ 2.1k tokens · 5.1s        │   │
-│ │ [View] [Re-gen] [Delete]  │   │
-│ └───────────────────────────┘   │
-│                                  │
-│ 12 items · [Clear All]          │
-└─────────────────────────────────┘
+┌──────────────────────────────┐
+│ ← Back          Workflows     │
+│ 🔍 Search...    [All ▼]      │
+│ ┌────────────────────────┐   │
+│ │ ▶ Email Notification    │   │
+│ │   Active · 2h ago       │   │
+│ │   [Toggle] [Delete]     │   │
+│ ├────────────────────────┤   │
+│ │ ⏸ Data Backup           │   │
+│ │   Inactive · 1d ago     │   │
+│ └────────────────────────┘   │
+└──────────────────────────────┘
 ```
 
-### 5.6 Вкладка: Debug
+**[E] Executions:** аналогичный формат со статусами и фильтрами
+**[H] History:** список предыдущих генераций с [Re-gen] [Delete]
+**[⚙] Settings:** inline form (не modal)
+
+### 5.4 Settings View (внутри panel)
 
 ```
-┌─────────────────────────────────┐
-│ Debug Mode                       │
-│                                  │
-│ System Prompt:                   │
-│ ┌───────────────────────────┐   │
-│ │ You are an n8n expert...  │   │
-│ └───────────────────────────┘   │
-│                                  │
-│ User Prompt:                     │
-│ ┌───────────────────────────┐   │
-│ │ Create a simple webhook   │   │
-│ └───────────────────────────┘   │
-│                                  │
-│ [🔍 Send Debug Request]         │
-│                                  │
-│ ─── Response ────────────────── │
-│ Model: claude-sonnet-4-20250514 │
-│ Tokens: 342 in / 1,204 out     │
-│ Duration: 2.3s                  │
-│ Stop reason: end_turn           │
-│ ┌───────────────────────────┐   │
-│ │ Raw response text...      │   │
-│ └───────────────────────────┘   │
-└─────────────────────────────────┘
+┌──────────────────────────────┐
+│ ← Back          Settings      │
+│                               │
+│ ── n8n Instance ──────────── │
+│ URL: [https://n8n.srv...    ] │
+│ API Key: [••••••••] [👁]     │
+│ [Test] 🟢 Connected · v2.1.5 │
+│                               │
+│ ── Claude API ────────────── │
+│ API Key: [••••••••] [👁]     │
+│ Model: [claude-sonnet-4.5 ▼] │
+│ [Test] 🟢 OK                 │
+│                               │
+│ ── Preferences ──────────── │
+│ History limit: [50]           │
+│ Auto-inject: [✓]             │
+│ Notifications: [✓]           │
+│                               │
+│ [Export] [Import] [Reset]     │
+│           [Save]              │
+└──────────────────────────────┘
 ```
 
-### 5.7 Settings (модальное окно или отдельный экран)
+### 5.5 Context Menu (правый клик)
 
+При выделении текста в n8n editor:
 ```
-┌─────────────────────────────────┐
-│ ⚙️ Settings                     │
-│                                  │
-│ ── n8n Instance ──────────────  │
-│ URL: [http://localhost:5678   ] │
-│ API Key: [••••••••••] [👁]      │
-│ [Test Connection]  🟢 Connected │
-│                                  │
-│ ── Claude API ────────────────  │
-│ API Key: [••••••••••] [👁]      │
-│ Model: [claude-sonnet-4-20250514 ▼]│
-│ Temperature: [0.3]              │
-│ Max Tokens: [4096]              │
-│ [Test Connection]  🟢 OK        │
-│                                  │
-│ ── Preferences ───────────────  │
-│ Theme: [Dark ▼]                 │
-│ Language: [English ▼]           │
-│ History limit: [50]             │
-│ Auto-inject: [✓]               │
-│ Notifications: [✓]             │
-│                                  │
-│ ── Data ──────────────────────  │
-│ [Export Settings] [Import]       │
-│ [Clear All Data]                │
-│                                  │
-│            [Save] [Cancel]       │
-└─────────────────────────────────┘
+┌─────────────────────────────┐
+│ 🔍 Explain with n8n Pilot   │
+│ 💻 Generate Code Node        │
+│ ✨ Optimize with AI          │
+└─────────────────────────────┘
 ```
+
+Результат появляется в chat panel.
+
+### 5.6 Уведомления (toast)
+
+Остаются как в v1.0 — injected DOM элемент, top-right corner, auto-dismiss 6s.
+Используются для: workflow saved, injection result, errors.
+
+### 5.7 Settings (модальное окно — УДАЛЕНО)
+
+> Settings теперь живут в drawer view внутри panel (см. 5.4). Modal удалён вместе с popup.
 
 ### 5.8 Цветовая схема (Dark Theme)
 
+> В panel CSS переменные объявлены на `:host` (Shadow DOM), не на `:root`:
+
 ```css
-:root {
+:host {
   --bg-primary: #0a0a0a;
   --bg-secondary: #1a1a1a;
   --bg-tertiary: #262626;
@@ -1173,27 +1332,49 @@ const rateLimiter = {
 
 ---
 
-## 7. Структура файлов проекта
+## 7. Структура файлов проекта (PIVOT v2.0)
 
 ```
 n8n-pilot/
-├── manifest.json
-├── background.js              # Service worker (entry point, message router)
-├── popup.html                 # Popup UI (5 tabs + settings modal)
-├── popup.js                   # Popup logic (861 lines)
-├── popup.css                  # Popup styles (967 lines, dark theme)
-├── content.js                 # Content script (n8n pages only)
-├── diagnostic.html            # API diagnostic tool (standalone)
-├── lib/
-│   ├── crypto.js              # AES-256-GCM encryption (Web Crypto API)
-│   ├── settings.js            # Settings management (encrypted API keys)
-│   ├── claude-client.js       # Anthropic API client (sendMessage, testConnection)
-│   ├── n8n-client.js          # n8n REST API client (CRUD + testConnection)
-│   ├── workflow-generator.js  # AI workflow generation (generate, modify, explain)
-│   ├── workflow-validator.js  # JSON validation & normalization
-│   ├── history.js             # Generation history (chrome.storage.local)
-│   ├── versions.js            # Workflow version tracking
-│   └── utils.js               # Shared utilities (uuid, sleep, extractJson, etc.)
+├── manifest.json              # MODIFIED: no popup, +contextMenus, +web_accessible_resources
+├── background.js              # MODIFIED: +streaming relay, +icon toggle, +context menu
+├── content.js                 # REWRITTEN: panel injection orchestrator + Shadow DOM
+│
+├── panel/                     # NEW — injected panel UI (replaces popup)
+│   ├── panel.html             # Panel HTML template (loaded into Shadow DOM)
+│   ├── panel.css              # Panel styles (CSS variables on :host, dark theme)
+│   ├── panel.js               # Main controller, msg() helper, view routing
+│   ├── chat.js                # Chat interface, streaming display, guided dialog
+│   ├── chat-memory.js         # Per-workflow conversation storage (chrome.storage.local)
+│   ├── settings-view.js       # Settings form + API connection test
+│   ├── workflows-view.js      # Workflow list drawer
+│   ├── executions-view.js     # Executions list drawer
+│   ├── history-view.js        # Generation history drawer
+│   ├── context-menu.js        # Right-click action handler
+│   └── n8n-context.js         # Detect current workflow, selected nodes, URL watching
+│
+├── lib/                       # Business logic
+│   ├── crypto.js              # UNCHANGED — AES-256-GCM encryption
+│   ├── settings.js            # UNCHANGED — Settings management
+│   ├── claude-client.js       # MODIFIED — +sendMessageStream(), +sendConversation()
+│   ├── n8n-client.js          # UNCHANGED — n8n REST API client
+│   ├── workflow-generator.js  # MODIFIED — +generateFromBlueprint(), dynamic system prompt
+│   ├── workflow-validator.js  # UNCHANGED — JSON validation & normalization
+│   ├── prompt-analyzer.js     # NEW — structured task → node mapping → blueprint
+│   ├── node-catalog-core.js   # NEW — 20-30 common nodes with full parameter schemas
+│   ├── node-catalog-index.js  # NEW — ~280 remaining nodes (brief index)
+│   ├── history.js             # UNCHANGED — Generation history
+│   ├── versions.js            # UNCHANGED — Workflow version tracking
+│   └── utils.js               # UNCHANGED — Shared utilities
+│
+├── example/                   # Real workflow JSONs from user's n8n 2.1.5 (reference data)
+│   ├── Supabase-plugin.json
+│   ├── MacWhisper (1).json
+│   ├── inoreader_AI-_196267257.json
+│   ├── inoreader_AI_Telegram-_196267257.json
+│   ├── rss.app_Twitter_AI_selebs-_196267257.json
+│   └── rss_app_Twitter_AI_feed__196267257.json
+│
 ├── icons/
 │   ├── icon16.png
 │   ├── icon32.png
@@ -1203,32 +1384,38 @@ n8n-pilot/
 │   └── bump-version.js        # Syncs version across package.json, manifest.json, SNAPSHOT, README
 ├── tests/
 │   ├── unit/
-│   │   ├── setup.js                   # Chrome API mocks (in-memory storage)
-│   │   ├── crypto.test.js             # ✅ EXISTS — encryption tests
-│   │   ├── settings.test.js           # ✅ EXISTS — settings CRUD tests
-│   │   ├── workflow-validator.test.js  # ✅ EXISTS — validation/normalization
-│   │   ├── history.test.js            # ✅ EXISTS — history CRUD/FIFO
-│   │   ├── versions.test.js           # ✅ EXISTS — version tracking
-│   │   ├── utils.test.js              # ✅ EXISTS — utility functions
-│   │   ├── integration-ids.test.js    # ✅ EXISTS — DOM ID consistency
-│   │   └── kodex-regression.test.js   # ✅ EXISTS — regression suite (17 tests)
+│   │   ├── setup.js                   # ✅ Chrome API mocks (in-memory storage)
+│   │   ├── crypto.test.js             # ✅ encryption tests
+│   │   ├── settings.test.js           # ✅ settings CRUD tests
+│   │   ├── workflow-validator.test.js  # ✅ validation/normalization
+│   │   ├── history.test.js            # ✅ history CRUD/FIFO
+│   │   ├── versions.test.js           # ✅ version tracking
+│   │   ├── utils.test.js              # ✅ utility functions
+│   │   ├── integration-ids.test.js    # ✅ DOM ID consistency (needs update for panel)
+│   │   ├── kodex-regression.test.js   # ✅ regression suite (17 tests)
+│   │   ├── prompt-analyzer.test.js    # ⏳ PLANNED — analyzer unit tests
+│   │   ├── node-catalog.test.js       # ⏳ PLANNED — catalog integrity tests
+│   │   └── chat-memory.test.js        # ⏳ PLANNED — chat memory tests
 │   └── e2e/
 │       ├── mocks/
-│       │   └── n8n-server.js          # ✅ EXISTS — Express mock n8n API (port 5678)
-│       └── (E2E specs planned, not yet implemented)
-├── .env.example               # Development env vars template
+│       │   └── n8n-server.js          # ✅ Express mock n8n API (port 5678)
+│       └── (E2E specs planned — panel injection, chat flow, streaming)
+│
+├── popup.html                 # ❌ DELETED in v2.0 (replaced by panel/)
+├── popup.js                   # ❌ DELETED in v2.0 (logic migrated to panel/)
+├── popup.css                  # ❌ DELETED in v2.0 (styles migrated to panel/panel.css)
+│
+├── .env.example
 ├── package.json
-├── CHANGELOG.md               # Keep a Changelog format
+├── CHANGELOG.md
 ├── README.md
-├── SPEC.md                    # THIS FILE — technical specification
-└── PLAN-workflow-testing.md   # Workflow auto-testing spec (v3.0)
+├── SPEC.md                    # THIS FILE — technical specification v3.0
+└── PLAN-workflow-testing.md   # Workflow auto-testing spec (v3.1)
 ```
 
-> **IMPORTANT — Test file status:**
-> Files marked ✅ EXISTS are real and passing. The following test files from SPEC v1.0 do NOT exist yet:
-> `claude-client.test.js`, `n8n-client.test.js`, `workflow-generator.test.js`,
-> `background.test.js`, `popup.test.js`, `content.test.js`, and all E2E `.e2e.js` files.
-> These are planned but not yet implemented.
+> **File status legend:** ✅ = exists and passing, ⏳ = planned, ❌ = deleted
+> Test files not yet implemented: claude-client.test.js, n8n-client.test.js,
+> workflow-generator.test.js, content.test.js, panel/*.test.js, all E2E specs.
 
 ---
 
@@ -1557,10 +1744,11 @@ app.post('/api/v1/workflows', (req, res) => { ... });
 
 | Метрика | Цель |
 |---------|------|
-| Permissions | ≤ 3 обязательных |
-| Bundle size | < 200 KB (без иконок) |
-| Popup load time | < 200ms |
-| Generation time | < 30s (зависит от Claude) |
+| Permissions | ≤ 6 обязательных (storage, clipboardWrite, notifications, scripting, activeTab, contextMenus) |
+| Bundle size | < 300 KB (без иконок, включая panel/ и node catalogs) |
+| Panel inject time | < 500ms (Shadow DOM creation + CSS load) |
+| Streaming first token | < 2s (зависит от Claude) |
+| Generation time (full pipeline) | < 45s (analyzer + generator) |
 | Unit test coverage | > 90% |
 | E2E test scenarios | > 40 |
 | 0 external dependencies | runtime |
@@ -1569,24 +1757,15 @@ app.post('/api/v1/workflows', (req, res) => { ... });
 
 ---
 
-## 12. Этапы разработки
+## 12. Этапы разработки (PIVOT v2.0)
 
-| # | Этап | Файлы | Оценка |
-|---|------|-------|--------|
-| 1 | Skeleton + manifest + crypto | manifest.json, lib/crypto.js | 1 час |
-| 2 | Settings + UI skeleton | lib/settings.js, popup.html/css/js | 2 часа |
-| 3 | Claude client + generator | lib/claude-client.js, lib/workflow-generator.js, lib/workflow-validator.js | 3 часа |
-| 4 | n8n client | lib/n8n-client.js | 2 часа |
-| 5 | Background router | background.js | 2 часа |
-| 6 | Content script | content.js | 1 час |
-| 7 | Full popup UI | popup.js (все вкладки) | 4 часа |
-| 8 | History + Versions | lib/history.js, lib/versions.js | 1 час |
-| 9 | Unit tests | tests/unit/*.test.js | 3 часа |
-| 10 | Mock servers | tests/e2e/mocks/*.js | 1 час |
-| 11 | E2E tests | tests/e2e/*.e2e.js | 3 часа |
-| 12 | Security audit + polish | Review all code | 1 час |
-
-**Итого:** ~24 часа разработки
+| Phase | Описание | Ключевые файлы |
+|-------|----------|----------------|
+| **1. Foundation** | Panel appears in n8n, settings work | content.js, panel/panel.html+css+js, panel/settings-view.js, manifest.json, background.js |
+| **2. Chat + Streaming** | Chat UI, streaming generation | panel/chat.js, panel/chat-memory.js, lib/claude-client.js (+streaming), background.js |
+| **3. Smart Generator** | Guided dialog, prompt analyzer, node catalogs | lib/prompt-analyzer.js, lib/node-catalog-core.js, lib/node-catalog-index.js, lib/workflow-generator.js |
+| **4. Context + Views** | Workflow detection, secondary drawers | panel/n8n-context.js, panel/workflows-view.js, panel/executions-view.js, panel/history-view.js |
+| **5. Polish** | Context menu, resize, keyboard shortcut, delete popup | panel/context-menu.js, tests/, SPEC.md, version bump to 2.0.0 |
 
 ---
 
@@ -1596,20 +1775,22 @@ app.post('/api/v1/workflows', (req, res) => { ... });
 |----------|----------|------------|
 | Node.js | 18+ | Для запуска тестов и скриптов |
 | Chrome | 116+ | `minimum_chrome_version` в manifest.json |
-| n8n | 1.0+ (self-hosted) | Публичный REST API v1 |
+| n8n | **2.1.5** (self-hosted) | REST API v1, instance: n8n.srv927837.hstgr.cloud |
 | Vitest | ^2.0.0 | Unit test framework |
 | Playwright | ^1.45.0 | E2E test framework |
 | Express | ^4.19.0 | Mock servers для E2E |
 | Mock n8n port | 5678 | `tests/e2e/mocks/n8n-server.js` |
 | Mock Claude port | 3100 | Planned, not yet implemented |
-| Extension popup | 420x520px | Fixed dimensions |
-| Build mode | None | Нет bundler — нативные ES modules |
-| Manifest | V3 | Service Worker, не background page |
+| Panel width | 380px (collapsible to 48px) | Injected into n8n editor DOM |
+| Shadow DOM | closed mode | CSS isolation from n8n |
+| Build mode | None | Нет bundler — нативные ES modules, programmatic injection |
+| Manifest | V3 | Service Worker, no popup, contextMenus, web_accessible_resources |
 
 **Self-host assumptions:**
-- n8n доступен по HTTP/HTTPS URL, указанному пользователем
+- n8n 2.1.5 доступен по HTTPS URL (n8n.srv927837.hstgr.cloud)
 - n8n API key создан через Settings → API → Generate key
 - Webhook URLs работают без дополнительной авторизации
+- Claude API key с достаточным балансом для streaming
 - `GET /api/v1/credentials` возвращает список без секретов (только id, name, type)
 
 ---
@@ -1749,6 +1930,76 @@ PLAN содержит ~500 строк детального implementation guide 
 - **Динамический credential matching** из `node.credentials` JSON (не hardcoded map)
 - **chrome.storage.local** для test results (не database)
 - **4 фазы** реализации (MVP → Credentials → Error Analysis → Advanced)
+
+---
+
+## 17. Message Protocol (PIVOT v2.0)
+
+> Все сообщения проходят через `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage`.
+> Panel (content script) ↔ Background Service Worker.
+
+### 17.1 Существующие actions (без изменений)
+
+| Category | Actions |
+|----------|---------|
+| Settings | `getSettings`, `updateSettings`, `setApiKey`, `getApiKeyStatus`, `resetSettings`, `importSettings`, `exportSettings` |
+| Connection | `testClaudeConnection`, `testN8nConnection` |
+| Claude | `getClaudeModels` |
+| Generation | `generateWorkflow`, `modifyWorkflow`, `explainWorkflow`, `cancelGeneration` |
+| n8n CRUD | `listWorkflows`, `getWorkflow`, `createWorkflow`, `updateWorkflow`, `deleteWorkflow`, `activateWorkflow`, `deactivateWorkflow` |
+| Executions | `listExecutions`, `getExecution`, `deleteExecution` |
+| Variables | `listVariables`, `createVariable`, `updateVariable`, `deleteVariable` |
+| Tags/Creds | `listTags`, `createTag`, `listCredentials` |
+| History | `getHistory`, `getHistoryEntry`, `deleteHistoryEntry`, `clearHistory`, `searchHistory` |
+| Versions | `saveVersion`, `getVersions`, `getVersion`, `deleteVersion`, `diffVersions` |
+| Injection | `injectWorkflow`, `showN8nNotification` |
+
+### 17.2 Новые actions (v2.0)
+
+| Action | Direction | Payload | Response |
+|--------|-----------|---------|----------|
+| `generateWorkflowStream` | panel → bg | `{ prompt, model, workflowId }` | `{ started: true }` |
+| `STREAM_CHUNK` | bg → content | `{ type, text }` | — (fire-and-forget) |
+| `STREAM_DONE` | bg → content | `{ type, content, workflow, tokensUsed }` | — |
+| `STREAM_ERROR` | bg → content | `{ type, error }` | — |
+| `analyzePrompt` | panel → bg | `{ task: StructuredTask }` | `{ blueprint: WorkflowBlueprint }` |
+| `generateFromBlueprint` | panel → bg | `{ blueprint, stream: true }` | `{ started: true }` |
+| `saveChatMessage` | panel → bg | `{ workflowId, role, content, metadata }` | `{ success: true }` |
+| `getChatHistory` | panel → bg | `{ workflowId }` | `{ messages: [...] }` |
+| `clearChatHistory` | panel → bg | `{ workflowId }` | `{ success: true }` |
+| `togglePanel` | bg → content | `{ type: 'togglePanel' }` | — |
+| `CONTEXT_MENU_ACTION` | bg → content | `{ type, menuId, selectedText }` | — |
+
+### 17.3 Streaming Data Flow
+
+```
+1. User types prompt in chat → panel/chat.js
+2. chat.js calls msg('generateWorkflowStream', { prompt, model, workflowId })
+3. background.js receives, calls claudeClient.sendMessageStream(...)
+4. claude-client.js: fetch(API_URL, { stream: true })
+5. response.body.getReader() loop:
+   - Parse SSE: "data: {type: 'content_block_delta', delta: {text: '...'} }"
+   - For each text delta: onChunk(text)
+6. background.js onChunk: chrome.tabs.sendMessage(tabId, { type: 'STREAM_CHUNK', text })
+7. content.js receives STREAM_CHUNK → forwards to panel via Shadow DOM reference
+8. panel/chat.js appends text to current assistant bubble (real-time)
+9. On stream end: background.js sends STREAM_DONE with full content + extracted workflow
+10. panel/chat.js finalizes message, shows workflow card if JSON detected
+```
+
+### 17.4 Extension Icon Click
+
+```javascript
+// background.js — no popup, toggle panel instead
+chrome.action.onClicked.addListener(async (tab) => {
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: 'togglePanel' });
+  } catch {
+    // Content script not yet injected — inject panel first
+    await injectPanel(tab.id);
+  }
+});
+```
 
 ---
 
