@@ -1,0 +1,21 @@
+{
+  "name": "n8n-pilot",
+  "version": "1.0.0",
+  "description": "AI-powered n8n workflow manager with Claude integration",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "lint": "echo 'No linter configured'",
+    "icons": "node scripts/generate-icons.js"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0",
+    "@playwright/test": "^1.45.0",
+    "express": "^4.19.0"
+  }
+}

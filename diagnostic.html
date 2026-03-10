@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>n8n Pilot — Claude API Diagnostic</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 24px; }
+    h1 { font-size: 20px; margin-bottom: 16px; color: #ff6b35; }
+    h2 { font-size: 15px; margin: 16px 0 8px; color: #aaa; }
+    label { display: block; margin: 8px 0 4px; font-size: 13px; color: #999; }
+    input, select, textarea { width: 100%; padding: 8px 10px; border: 1px solid #333; border-radius: 6px; background: #16213e; color: #e0e0e0; font-size: 13px; font-family: monospace; }
+    textarea { min-height: 120px; resize: vertical; }
+    button { padding: 10px 20px; border: none; border-radius: 6px; background: #ff6b35; color: #fff; font-size: 14px; cursor: pointer; margin: 4px 4px 4px 0; }
+    button:hover { background: #e05a2b; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .row { display: flex; gap: 12px; align-items: flex-end; }
+    .row > * { flex: 1; }
+    .result { margin-top: 12px; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow-y: auto; }
+    .success { background: #0a3d0a; border: 1px solid #1a6b1a; }
+    .error { background: #3d0a0a; border: 1px solid #6b1a1a; }
+    .info { background: #0a1a3d; border: 1px solid #1a3d6b; }
+    .test-group { margin-bottom: 20px; padding: 16px; background: #16213e; border-radius: 8px; }
+    .status { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 8px; }
+    .status.pass { background: #1a6b1a; }
+    .status.fail { background: #6b1a1a; }
+    .status.pending { background: #6b6b1a; }
+    hr { border: none; border-top: 1px solid #333; margin: 20px 0; }
+  </style>
+</head>
+<body>
+  <h1>n8n Pilot — Claude API Diagnostic</h1>
+  <p style="color:#888; margin-bottom:16px; font-size:13px;">
+    This page tests the Anthropic Claude API directly from your browser, bypassing the extension.
+    It helps isolate whether the problem is with the API call format, model IDs, or API key encryption.
+  </p>
+
+  <div class="test-group">
+    <h2>1. API Key</h2>
+    <label>Paste your Claude API key here (stays local, never sent anywhere except api.anthropic.com):</label>
+    <input type="password" id="apiKey" placeholder="sk-ant-api03-..." />
+    <label style="margin-top:8px;">
+      <input type="checkbox" id="showKey" onchange="document.getElementById('apiKey').type = this.checked ? 'text' : 'password'">
+      Show key
+    </label>
+  </div>
+
+  <div class="test-group">
+    <h2>2. Quick Test — Minimal Request</h2>
+    <p style="color:#888; font-size:12px; margin-bottom:8px;">
+      Sends the simplest possible request to test connectivity and billing.
+    </p>
+    <div class="row">
+      <div>
+        <label>Model:</label>
+        <select id="testModel">
+          <option value="claude-sonnet-4-5-20250929">claude-sonnet-4-5-20250929 (worked in Workbench)</option>
+          <option value="claude-sonnet-4-6">claude-sonnet-4-6 (current docs)</option>
+          <option value="claude-sonnet-4-20250514">claude-sonnet-4-20250514 (our extension default)</option>
+          <option value="claude-haiku-3-5-20241022">claude-haiku-3-5-20241022 (cheapest)</option>
+          <option value="claude-opus-4-20250514">claude-opus-4-20250514 (our extension)</option>
+          <option value="claude-opus-4-6">claude-opus-4-6 (current docs)</option>
+        </select>
+      </div>
+      <div style="flex:0 0 auto;">
+        <button onclick="runQuickTest()">Run Test</button>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:8px;">
+      <div>
+        <label>
+          <input type="checkbox" id="useBrowserHeader" checked>
+          Include <code>anthropic-dangerous-direct-browser-access: true</code> header
+        </label>
+      </div>
+    </div>
+
+    <div id="quickResult"></div>
+  </div>
+
+  <div class="test-group">
+    <h2>3. Batch Model Test — All Models at Once</h2>
+    <p style="color:#888; font-size:12px; margin-bottom:8px;">
+      Tests all model IDs to find which ones work with your account.
+    </p>
+    <button onclick="runBatchTest()">Test All Models</button>
+    <div id="batchResult"></div>
+  </div>
+
+  <div class="test-group" style="background:#2a1a0a; border: 1px solid #ff6b35;">
+    <h2 style="color:#ff6b35;">⚠️ IMPORTANT: Workspace Billing Check</h2>
+    <p style="color:#ccc; font-size:13px; margin-bottom:12px;">
+      <strong>Anthropic Console has workspaces, and each workspace has SEPARATE billing.</strong><br>
+      The Workbench uses your account session (cookies), NOT the API key — so it uses your default workspace credits.<br>
+      But your API key might belong to a different workspace that has NO credits.<br><br>
+      <strong>To fix this:</strong><br>
+      1. Go to <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:#ff6b35;">console.anthropic.com/settings/keys</a><br>
+      2. Find your API key — note which <strong>workspace</strong> it belongs to<br>
+      3. Switch to that workspace, go to <strong>Plans &amp; Billing</strong><br>
+      4. Make sure THAT workspace has credits (not just your default workspace)<br>
+      5. Or: create a new API key in the workspace that has credits
+    </p>
+  </div>
+
+  <div class="test-group">
+    <h2>4. Server-Side Test (curl command)</h2>
+    <p style="color:#888; font-size:12px; margin-bottom:8px;">
+      Copy this curl command and run it in your terminal (Mac/Linux/WSL).
+      This tests the API WITHOUT any browser headers — pure server-side call.
+      If this also fails, it confirms the problem is with the API key's workspace billing.
+    </p>
+    <button onclick="generateCurl()">Generate curl Command</button>
+    <div id="curlResult"></div>
+  </div>
+
+  <div class="test-group">
+    <h2>5. Encryption Round-Trip Test</h2>
+    <p style="color:#888; font-size:12px; margin-bottom:8px;">
+      Tests if AES-256-GCM encryption/decryption preserves the API key exactly.
+      (Uses Web Crypto API, same as the extension.)
+    </p>
+    <button onclick="runCryptoTest()">Test Encryption</button>
+    <div id="cryptoResult"></div>
+  </div>
+
+  <hr>
+
+  <div class="test-group">
+    <h2>5. Full Request/Response Log</h2>
+    <p style="color:#888; font-size:12px; margin-bottom:8px;">
+      Shows the exact request headers, body, and response for debugging.
+    </p>
+    <div id="fullLog"></div>
+  </div>
+
+  <script>
+    const API_URL = 'https://api.anthropic.com/v1/messages';
+
+    function getKey() {
+      const key = document.getElementById('apiKey').value.trim();
+      if (!key) {
+        alert('Please enter your API key first');
+        return null;
+      }
+      return key;
+    }
+
+    function buildHeaders(apiKey, useBrowserHeader) {
+      const headers = {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      };
+      if (useBrowserHeader) {
+        headers['anthropic-dangerous-direct-browser-access'] = 'true';
+      }
+      return headers;
+    }
+
+    function showResult(elementId, html) {
+      document.getElementById(elementId).innerHTML = html;
+    }
+
+    function logBox(cls, text) {
+      return `<div class="result ${cls}">${escapeHtml(text)}</div>`;
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    async function callClaude(apiKey, model, useBrowserHeader) {
+      const headers = buildHeaders(apiKey, useBrowserHeader);
+      const body = {
+        model: model,
+        max_tokens: 16,
+        messages: [{ role: 'user', content: 'Say hello in one word.' }],
+      };
+
+      const requestLog = `=== REQUEST ===
+POST ${API_URL}
+
+Headers:
+${Object.entries(headers).map(([k,v]) => `  ${k}: ${k === 'x-api-key' ? v.substring(0,12) + '...' + v.substring(v.length-4) : v}`).join('\n')}
+
+Body:
+${JSON.stringify(body, null, 2)}`;
+
+      const start = Date.now();
+
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        });
+
+        const elapsed = Date.now() - start;
+        const responseText = await response.text();
+        let responseJson = null;
+        try { responseJson = JSON.parse(responseText); } catch {}
+
+        const responseLog = `\n=== RESPONSE (${elapsed}ms) ===
+Status: ${response.status} ${response.statusText}
+
+Headers:
+${[...response.headers.entries()].map(([k,v]) => `  ${k}: ${v}`).join('\n')}
+
+Body:
+${responseJson ? JSON.stringify(responseJson, null, 2) : responseText}`;
+
+        // Update the full log
+        showResult('fullLog', logBox('info', requestLog + responseLog));
+
+        return {
+          ok: response.ok,
+          status: response.status,
+          data: responseJson,
+          text: responseText,
+          elapsed,
+          requestLog,
+          responseLog,
+        };
+      } catch (err) {
+        const errorLog = `\n=== ERROR (${Date.now() - start}ms) ===
+${err.name}: ${err.message}`;
+
+        showResult('fullLog', logBox('error', requestLog + errorLog));
+
+        return {
+          ok: false,
+          status: 0,
+          data: null,
+          text: err.message,
+          elapsed: Date.now() - start,
+          error: err,
+        };
+      }
+    }
+
+    async function runQuickTest() {
+      const apiKey = getKey();
+      if (!apiKey) return;
+
+      const model = document.getElementById('testModel').value;
+      const useBrowserHeader = document.getElementById('useBrowserHeader').checked;
+
+      showResult('quickResult', logBox('info', `Testing ${model}...`));
+
+      const result = await callClaude(apiKey, model, useBrowserHeader);
+
+      if (result.ok) {
+        const text = result.data?.content?.[0]?.text || '(no text)';
+        const tokens = result.data?.usage;
+        showResult('quickResult', logBox('success',
+          `✅ SUCCESS (${result.elapsed}ms)\n\nModel: ${result.data?.model}\nResponse: "${text}"\nTokens: ${tokens?.input_tokens} in / ${tokens?.output_tokens} out\nStop reason: ${result.data?.stop_reason}`
+        ));
+      } else {
+        const errMsg = result.data?.error?.message || result.text;
+        const errType = result.data?.error?.type || 'unknown';
+        showResult('quickResult', logBox('error',
+          `❌ FAILED — HTTP ${result.status}\n\nError type: ${errType}\nMessage: ${errMsg}\n\n${result.status === 400 ? 'This is a 400 Bad Request. Could be:\n- Invalid model ID\n- Billing/credit issue\n- Malformed request body' : ''}`
+        ));
+      }
+    }
+
+    async function runBatchTest() {
+      const apiKey = getKey();
+      if (!apiKey) return;
+
+      const models = [
+        'claude-sonnet-4-5-20250929',
+        'claude-sonnet-4-6',
+        'claude-sonnet-4-20250514',
+        'claude-haiku-3-5-20241022',
+        'claude-opus-4-6',
+        'claude-opus-4-20250514',
+      ];
+
+      const useBrowserHeader = document.getElementById('useBrowserHeader').checked;
+      let html = '<div class="result info">Testing all models...\n\n';
+      showResult('batchResult', html + '</div>');
+
+      const results = [];
+
+      for (const model of models) {
+        html += `Testing ${model}... `;
+        showResult('batchResult', html + '⏳</div>');
+
+        const result = await callClaude(apiKey, model, useBrowserHeader);
+
+        if (result.ok) {
+          html += `✅ OK (${result.elapsed}ms) — "${result.data?.content?.[0]?.text || ''}"`;
+          results.push({ model, ok: true });
+        } else {
+          const errMsg = result.data?.error?.message || result.text;
+          html += `❌ ${result.status} — ${errMsg.substring(0, 100)}`;
+          results.push({ model, ok: false, error: errMsg });
+        }
+        html += '\n';
+        showResult('batchResult', html + '</div>');
+
+        // Small delay between requests
+        await new Promise(r => setTimeout(r, 500));
+      }
+
+      // Summary
+      const working = results.filter(r => r.ok);
+      const failed = results.filter(r => !r.ok);
+
+      html += `\n${'='.repeat(60)}\nSUMMARY: ${working.length}/${models.length} models working\n`;
+      if (working.length > 0) {
+        html += `\nWorking models:\n${working.map(r => `  ✅ ${r.model}`).join('\n')}\n`;
+      }
+      if (failed.length > 0) {
+        html += `\nFailed models:\n${failed.map(r => `  ❌ ${r.model}: ${r.error?.substring(0, 80)}`).join('\n')}\n`;
+      }
+
+      showResult('batchResult', `<div class="result ${working.length > 0 ? 'success' : 'error'}">${escapeHtml(html)}</div>`);
+    }
+
+    function generateCurl() {
+      const apiKey = getKey();
+      if (!apiKey) return;
+
+      const maskedKey = apiKey.substring(0, 12) + '...' + apiKey.substring(apiKey.length - 4);
+
+      const curlCmd = `curl -v https://api.anthropic.com/v1/messages \\
+  --header "x-api-key: ${apiKey}" \\
+  --header "anthropic-version: 2023-06-01" \\
+  --header "content-type: application/json" \\
+  --data '{
+    "model": "claude-sonnet-4-5-20250929",
+    "max_tokens": 16,
+    "messages": [{"role": "user", "content": "Say hello"}]
+  }'`;
+
+      const displayCmd = curlCmd.replace(apiKey, maskedKey);
+
+      showResult('curlResult', `<div class="result info">Displayed with masked key (${maskedKey}):
+
+${escapeHtml(displayCmd)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The actual command (with your real key) has been copied to clipboard.
+Paste it in Terminal and run it.
+
+If curl ALSO returns "credit balance too low":
+→ The API key's workspace has no credits
+→ Go to console.anthropic.com, find the workspace for this key, and add credits there
+
+If curl WORKS but browser test fails:
+→ The issue is browser-specific (CORS/header related)
+</div>`);
+
+      // Copy actual command to clipboard
+      navigator.clipboard.writeText(curlCmd).catch(() => {
+        // Fallback: show a textarea with the command
+        showResult('curlResult', `<div class="result info">Copy this command and run in Terminal:
+
+${escapeHtml(curlCmd)}</div>`);
+      });
+    }
+
+    async function runCryptoTest() {
+      showResult('cryptoResult', logBox('info', 'Testing AES-256-GCM encryption round-trip...'));
+
+      const apiKey = getKey();
+      if (!apiKey) return;
+
+      try {
+        // Generate key
+        const cryptoKey = await crypto.subtle.generateKey(
+          { name: 'AES-GCM', length: 256 },
+          true,
+          ['encrypt', 'decrypt']
+        );
+
+        // Export/Import round-trip (like the extension does)
+        const jwk = await crypto.subtle.exportKey('jwk', cryptoKey);
+        const importedKey = await crypto.subtle.importKey(
+          'jwk', jwk, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']
+        );
+
+        // Encrypt
+        const encoder = new TextEncoder();
+        const data = encoder.encode(apiKey);
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+
+        const encrypted = await crypto.subtle.encrypt(
+          { name: 'AES-GCM', iv },
+          importedKey,
+          data
+        );
+
+        // Convert to base64 (same method as extension)
+        function arrayBufferToBase64(buffer) {
+          const bytes = new Uint8Array(buffer);
+          let binary = '';
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          return btoa(binary);
+        }
+
+        function base64ToArrayBuffer(base64) {
+          const binary = atob(base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          return bytes.buffer;
+        }
+
+        const cipherBase64 = arrayBufferToBase64(encrypted);
+        const ivBase64 = arrayBufferToBase64(iv.buffer);
+
+        // Decrypt
+        const encryptedData = base64ToArrayBuffer(cipherBase64);
+        const ivData = base64ToArrayBuffer(ivBase64);
+
+        const decrypted = await crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: new Uint8Array(ivData) },
+          importedKey,
+          encryptedData
+        );
+
+        const decoder = new TextDecoder();
+        const decryptedKey = decoder.decode(decrypted);
+
+        // Compare
+        const match = apiKey === decryptedKey;
+        const firstMatch = apiKey.substring(0, 12) === decryptedKey.substring(0, 12);
+        const lastMatch = apiKey.substring(apiKey.length - 4) === decryptedKey.substring(decryptedKey.length - 4);
+
+        const report = `Encryption Round-Trip Test
+${'='.repeat(40)}
+Original key length:  ${apiKey.length}
+Decrypted key length: ${decryptedKey.length}
+Keys match:           ${match ? '✅ YES' : '❌ NO'}
+First 12 chars match: ${firstMatch ? '✅' : '❌'} (${apiKey.substring(0,12)}... vs ${decryptedKey.substring(0,12)}...)
+Last 4 chars match:   ${lastMatch ? '✅' : '❌'} (...${apiKey.substring(apiKey.length-4)} vs ...${decryptedKey.substring(decryptedKey.length-4)})
+
+Cipher length (base64): ${cipherBase64.length}
+IV length (base64):     ${ivBase64.length}
+
+${match ? '✅ Encryption is working correctly — the key survives the round-trip.' : '❌ ENCRYPTION BUG: The key was corrupted during encrypt/decrypt!'}`;
+
+        showResult('cryptoResult', logBox(match ? 'success' : 'error', report));
+
+      } catch (err) {
+        showResult('cryptoResult', logBox('error', `❌ Crypto test failed: ${err.message}\n\n${err.stack}`));
+      }
+    }
+  </script>
+</body>
+</html>

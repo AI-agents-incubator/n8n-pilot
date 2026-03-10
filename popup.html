@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>n8n Pilot</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="popup-container">
+        <!-- Header -->
+        <header class="popup-header">
+            <div class="header-content">
+                <h1 class="header-title">⚡ n8n Pilot</h1>
+                <button class="btn-settings" id="btnSettings" aria-label="Settings">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M12 1v6m0 6v6M4.22 4.22l4.24 4.24m2.96 2.96l4.24 4.24M1 12h6m6 0h6m-15.78 7.78l4.24-4.24m2.96-2.96l4.24-4.24"></path>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Tab Navigation -->
+        <nav class="tab-nav">
+            <button class="tab-btn active" data-tab="generate">Generate</button>
+            <button class="tab-btn" data-tab="workflows">Workflows</button>
+            <button class="tab-btn" data-tab="executions">Executions</button>
+            <button class="tab-btn" data-tab="history">History</button>
+            <button class="tab-btn" data-tab="debug">Debug</button>
+        </nav>
+
+        <!-- Tab Content -->
+        <div class="tabs-container">
+            <!-- Generate Tab -->
+            <div id="generate" class="tab-content active">
+                <div class="tab-inner">
+                    <div class="form-group">
+                        <label for="prompt">Prompt</label>
+                        <textarea id="prompt" class="textarea-input" placeholder="Describe the workflow you want to generate..." rows="4"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="model">Model</label>
+                        <select id="model" class="select-input">
+                            <option value="claude-sonnet-4-5-20250929" selected>Claude Sonnet 4.5</option>
+                            <option value="claude-sonnet-4-6">Claude Sonnet 4 (latest)</option>
+                            <option value="claude-opus-4-6">Claude Opus 4 (latest)</option>
+                            <option value="claude-haiku-3-5-20241022">Claude Haiku 3.5</option>
+                        </select>
+                    </div>
+
+                    <button id="btnGenerate" class="btn btn-primary btn-full">
+                        <span class="btn-text">Generate Workflow</span>
+                        <span class="btn-loader hidden"></span>
+                    </button>
+
+                    <div id="output-section" class="output-section hidden">
+                        <div class="output-header">
+                            <h3>Generated Output</h3>
+                            <div class="output-actions">
+                                <button id="btnCopyOutput" class="btn btn-secondary btn-small" title="Copy to clipboard">Copy</button>
+                                <button id="btnSaveOutput" class="btn btn-secondary btn-small" title="Save to file">Save</button>
+                                <button id="btnInjectOutput" class="btn btn-primary btn-small" title="Inject into n8n">Inject</button>
+                                <button id="btnDownloadOutput" class="btn btn-secondary btn-small" title="Download JSON">Download</button>
+                            </div>
+                        </div>
+                        <div id="json-output" class="json-output"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Workflows Tab -->
+            <div id="workflows" class="tab-content">
+                <div class="tab-inner">
+                    <div class="search-bar">
+                        <input type="text" id="workflowSearch" class="input-search" placeholder="Search workflows...">
+                    </div>
+
+                    <div class="filter-group">
+                        <button class="filter-btn active" data-filter="all">All</button>
+                        <button class="filter-btn" data-filter="active">Active</button>
+                        <button class="filter-btn" data-filter="inactive">Inactive</button>
+                    </div>
+
+                    <div id="workflows-list" class="list-container"></div>
+                </div>
+            </div>
+
+            <!-- Executions Tab -->
+            <div id="executions" class="tab-content">
+                <div class="tab-inner">
+                    <div class="filters-row">
+                        <select id="executionWorkflowFilter" class="select-input select-sm">
+                            <option value="">All Workflows</option>
+                        </select>
+                        <select id="executionStatusFilter" class="select-input select-sm">
+                            <option value="">All Status</option>
+                            <option value="success">Success</option>
+                            <option value="error">Error</option>
+                            <option value="running">Running</option>
+                        </select>
+                    </div>
+
+                    <div id="executions-list" class="list-container"></div>
+                </div>
+            </div>
+
+            <!-- History Tab -->
+            <div id="history" class="tab-content">
+                <div class="tab-inner">
+                    <div class="search-bar">
+                        <input type="text" id="historySearch" class="input-search" placeholder="Search history...">
+                    </div>
+
+                    <div id="history-list" class="list-container"></div>
+                </div>
+            </div>
+
+            <!-- Debug Tab -->
+            <div id="debug" class="tab-content">
+                <div class="tab-inner">
+                    <div class="form-group">
+                        <label for="systemPrompt">System Prompt</label>
+                        <textarea id="systemPrompt" class="textarea-input" placeholder="Enter system prompt..." rows="3"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="userPrompt">User Prompt</label>
+                        <textarea id="userPrompt" class="textarea-input" placeholder="Enter user prompt..." rows="3"></textarea>
+                    </div>
+
+                    <button id="btnDebugSend" class="btn btn-primary btn-full">Send</button>
+
+                    <div id="debug-response" class="debug-response hidden">
+                        <h4>Response</h4>
+                        <div id="debugResponseContent" class="debug-content"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <footer class="status-bar">
+            <div class="status-indicator" id="statusIndicator">
+                <span class="status-dot"></span>
+                <span class="status-text">Disconnected</span>
+            </div>
+            <div class="status-info" id="statusInfo"></div>
+        </footer>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button id="btnCloseSettings" class="btn-close" aria-label="Close settings">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="modal-body">
+                <!-- n8n Configuration -->
+                <div class="settings-section">
+                    <h3>n8n Configuration</h3>
+                    <div class="form-group">
+                        <label for="n8nUrl">n8n URL</label>
+                        <input type="url" id="n8nUrl" class="input-text" placeholder="https://n8n.example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="n8nApiKey">API Key</label>
+                        <input type="password" id="n8nApiKey" class="input-text" placeholder="Your n8n API key">
+                    </div>
+                </div>
+
+                <!-- Claude Configuration -->
+                <div class="settings-section">
+                    <h3>Claude Configuration</h3>
+                    <div class="form-group">
+                        <label for="claudeApiKey">API Key</label>
+                        <input type="password" id="claudeApiKey" class="input-text" placeholder="Your Claude API key">
+                    </div>
+                    <div class="form-group">
+                        <label for="claudeModel">Default Model</label>
+                        <select id="claudeModel" class="select-input">
+                            <option value="claude-sonnet-4-5-20250929" selected>Claude Sonnet 4.5</option>
+                            <option value="claude-sonnet-4-6">Claude Sonnet 4 (latest)</option>
+                            <option value="claude-opus-4-6">Claude Opus 4 (latest)</option>
+                            <option value="claude-haiku-3-5-20241022">Claude Haiku 3.5</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Preferences -->
+                <div class="settings-section">
+                    <h3>Preferences</h3>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="autoInject" class="checkbox-input">
+                        <label for="autoInject" class="checkbox-label">Auto-inject generated workflows</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="saveHistory" class="checkbox-input" checked>
+                        <label for="saveHistory" class="checkbox-label">Keep generation history</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="enableNotifications" class="checkbox-input" checked>
+                        <label for="enableNotifications" class="checkbox-label">Enable notifications</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button id="btnResetSettings" class="btn btn-secondary">Reset to Defaults</button>
+                <button id="btnSaveSettings" class="btn btn-primary">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="popup.js" type="module"></script>
+</body>
+</html>

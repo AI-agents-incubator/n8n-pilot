@@ -1,0 +1,45 @@
+{
+  "simpleWebhook": {
+    "name": "Simple Webhook",
+    "nodes": [
+      {
+        "id": "test-001",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 1,
+        "position": [250, 300],
+        "parameters": {
+          "path": "test",
+          "httpMethod": "POST"
+        }
+      },
+      {
+        "id": "test-002",
+        "name": "Respond",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [550, 300],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ {\"status\": \"ok\"} }}"
+        }
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [[{ "node": "Respond", "type": "main", "index": 0 }]]
+      }
+    },
+    "settings": { "executionOrder": "v1" }
+  },
+  "malformedWorkflow": {
+    "name": "Malformed",
+    "nodes": {
+      "0": { "name": "Trigger", "type": "n8n-nodes-base.manualTrigger", "parameters": {} },
+      "1": { "name": "Set", "type": "n8n-nodes-base.set", "parameters": { "values": [{ "name": "x", "value": "1" }] } }
+    },
+    "connections": {
+      "Trigger": { "main": { "0": [{ "node": "Set" }] } }
+    }
+  }
+}
