@@ -13,6 +13,7 @@
   let _shadowRoot = null;
   let _panelHost = null;
   let _keepAliveInterval = null;
+  let _chatHandlers = null;
 
   // --- Panel Creation ---
 
@@ -78,20 +79,7 @@
   }
 
   async function loadPanelScripts() {
-    // Load settings-view.js first (it exposes globals), then panel.js
-    try {
-      const settingsUrl = chrome.runtime.getURL('panel/settings-view.js');
-      const settingsResp = await fetch(settingsUrl);
-      const settingsCode = await settingsResp.text();
-      // Execute in page context with access to chrome API
-      const settingsFn = new Function('chrome', '_root', settingsCode + '\nreturn { initSettingsView, loadSettingsData };');
-      // We can't use new Function for chrome access in content script context,
-      // so we eval in a controlled way via script injection into shadow root
-    } catch (err) {
-      console.error('[n8n Pilot] Failed to load settings script:', err);
-    }
-
-    // Instead of dynamic script loading (CSP issues), inline the panel logic
+    // Content scripts can't use ES modules, so all panel logic is inlined
     initPanelController();
   }
 
@@ -161,6 +149,12 @@
     // --- Settings View ---
     initSettingsController($, $q, $qa);
 
+    // --- Chat ---
+    _chatHandlers = initChatController($, _msg, {
+      startKeepAlive,
+      stopKeepAlive,
+    });
+
     // --- Status Bar ---
     updateStatusBar($);
     updateModelIndicator($);
@@ -172,6 +166,243 @@
       $q,
       $qa,
     };
+  }
+
+  // --- Chat Controller (inlined from chat.js) ---
+
+  function initChatController($, msgFn, options = {}) {
+    const chatMessages = $('chatMessages');
+    const chatInput = $('chatInput');
+    const sendBtn = $('btnSend');
+    const abortBtn = $('btnAbortGeneration');
+    const tokenCount = $('tokenCount');
+
+    let isStreaming = false;
+    let currentAssistantBubble = null;
+    let streamFullText = '';
+
+    if (!chatMessages || !chatInput || !sendBtn) return null;
+
+    // --- Event Listeners ---
+    sendBtn.addEventListener('click', () => sendMessage());
+
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    chatInput.addEventListener('input', () => {
+      chatInput.style.height = 'auto';
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px';
+    });
+
+    if (abortBtn) {
+      abortBtn.addEventListener('click', () => {
+        msgFn('cancelGeneration').catch(() => {});
+        finishStreaming('Generation cancelled.');
+      });
+    }
+
+    // --- Send Message ---
+    async function sendMessage() {
+      const text = chatInput.value.trim();
+      if (!text || isStreaming) return;
+
+      appendMessage('user', text);
+      chatInput.value = '';
+      chatInput.style.height = 'auto';
+
+      // Save user message
+      msgFn('saveChatMessage', { role: 'user', content: text }).catch(() => {});
+
+      startStreaming();
+
+      try {
+        await msgFn('generateWorkflowStream', { prompt: text });
+      } catch (err) {
+        finishStreaming(`Error: ${err.message}`);
+      }
+    }
+
+    // --- Message Rendering ---
+    function appendMessage(role, content) {
+      const welcome = chatMessages.querySelector('.chat-welcome');
+      if (welcome) welcome.remove();
+
+      const bubble = document.createElement('div');
+      bubble.className = `chat-bubble ${role}`;
+      bubble.innerHTML = _formatContent(content);
+      chatMessages.appendChild(bubble);
+      scrollToBottom();
+      return bubble;
+    }
+
+    function _formatContent(text) {
+      let html = _chatEscapeHtml(text);
+      html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, _lang, code) =>
+        `<pre class="code-block"><code>${code}</code></pre>`);
+      html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+      html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/\n/g, '<br>');
+      return html;
+    }
+
+    function _chatEscapeHtml(str) {
+      const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+      return String(str).replace(/[&<>"']/g, m => map[m]);
+    }
+
+    // --- Streaming ---
+    function startStreaming() {
+      isStreaming = true;
+      streamFullText = '';
+      if (abortBtn) abortBtn.classList.remove('hidden');
+
+      currentAssistantBubble = document.createElement('div');
+      currentAssistantBubble.className = 'chat-bubble assistant';
+      currentAssistantBubble.innerHTML = '<span class="streaming-cursor"></span>';
+      chatMessages.appendChild(currentAssistantBubble);
+      scrollToBottom();
+      options.startKeepAlive?.();
+    }
+
+    function handleChunk(text) {
+      if (!currentAssistantBubble) return;
+      streamFullText += text;
+      currentAssistantBubble.innerHTML = _formatContent(streamFullText) +
+        '<span class="streaming-cursor"></span>';
+      scrollToBottom();
+    }
+
+    function finishStreaming(errorMsg) {
+      isStreaming = false;
+      if (abortBtn) abortBtn.classList.add('hidden');
+      options.stopKeepAlive?.();
+
+      if (errorMsg && currentAssistantBubble) {
+        currentAssistantBubble.innerHTML = `<span class="error-text">${_chatEscapeHtml(errorMsg)}</span>`;
+        currentAssistantBubble = null;
+        return;
+      }
+
+      if (currentAssistantBubble && streamFullText) {
+        currentAssistantBubble.innerHTML = _formatContent(streamFullText);
+        const workflowJson = _extractWorkflowJson(streamFullText);
+        if (workflowJson) {
+          _appendWorkflowCard(workflowJson);
+        }
+      }
+
+      currentAssistantBubble = null;
+      streamFullText = '';
+    }
+
+    function handleStreamDone(data) {
+      if (tokenCount && data?.usage) {
+        const total = (data.usage.input || 0) + (data.usage.output || 0);
+        tokenCount.textContent = `${total} tokens`;
+      }
+      finishStreaming();
+
+      if (data?.content) {
+        msgFn('saveChatMessage', {
+          role: 'assistant',
+          content: data.content,
+          metadata: { tokensUsed: data.tokensUsed, model: data.model },
+        }).catch(() => {});
+      }
+    }
+
+    function handleStreamError(error) {
+      finishStreaming(error || 'Stream error');
+    }
+
+    // --- Workflow JSON Detection ---
+    function _extractWorkflowJson(text) {
+      const codeBlockMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+      if (codeBlockMatch) {
+        try {
+          const parsed = JSON.parse(codeBlockMatch[1]);
+          if (parsed.nodes && Array.isArray(parsed.nodes)) return parsed;
+        } catch (_) { /* not valid JSON */ }
+      }
+
+      const jsonMatch = text.match(/\{[\s\S]*"nodes"\s*:\s*\[[\s\S]*\][\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (parsed.nodes && Array.isArray(parsed.nodes)) return parsed;
+        } catch (_) { /* not valid JSON */ }
+      }
+      return null;
+    }
+
+    // --- Workflow Card ---
+    function _appendWorkflowCard(workflow) {
+      const card = document.createElement('div');
+      card.className = 'workflow-card';
+
+      const nodeCount = workflow.nodes?.length || 0;
+      const connectionCount = workflow.connections ? Object.keys(workflow.connections).length : 0;
+      const name = workflow.name || 'Generated Workflow';
+
+      card.innerHTML = `
+        <div class="workflow-card-header">
+          <span class="workflow-card-icon">\u26a1</span>
+          <span class="workflow-card-title">${_chatEscapeHtml(name)}</span>
+        </div>
+        <div class="workflow-card-meta">
+          <span>${nodeCount} nodes</span>
+          <span>${connectionCount} connections</span>
+        </div>
+        <div class="workflow-card-actions">
+          <button class="btn btn-primary btn-sm btn-copy-workflow">Copy JSON</button>
+          <button class="btn btn-secondary btn-sm btn-inject-workflow">Inject</button>
+        </div>
+      `;
+
+      const copyBtn = card.querySelector('.btn-copy-workflow');
+      const injectBtn = card.querySelector('.btn-inject-workflow');
+
+      if (copyBtn) {
+        copyBtn.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(JSON.stringify(workflow, null, 2));
+            copyBtn.textContent = 'Copied!';
+            setTimeout(() => { copyBtn.textContent = 'Copy JSON'; }, 2000);
+          } catch (_) {
+            copyBtn.textContent = 'Failed';
+            setTimeout(() => { copyBtn.textContent = 'Copy JSON'; }, 2000);
+          }
+        });
+      }
+
+      if (injectBtn) {
+        injectBtn.addEventListener('click', async () => {
+          try {
+            await msgFn('injectWorkflow', { workflow });
+            injectBtn.textContent = 'Injected!';
+            setTimeout(() => { injectBtn.textContent = 'Inject'; }, 2000);
+          } catch (_) {
+            injectBtn.textContent = 'Failed';
+            setTimeout(() => { injectBtn.textContent = 'Inject'; }, 2000);
+          }
+        });
+      }
+
+      chatMessages.appendChild(card);
+      scrollToBottom();
+    }
+
+    function scrollToBottom() {
+      requestAnimationFrame(() => {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      });
+    }
+
+    return { handleChunk, handleStreamDone, handleStreamError, appendMessage };
   }
 
   // --- Settings Controller (inlined from settings-view.js) ---
@@ -533,33 +764,30 @@
     }
   });
 
-  // --- Stream Handlers (Phase 2 will expand these) ---
+  // --- Stream Handlers ---
 
   function handleStreamChunk(msg) {
-    // Will be implemented in Phase 2 - chat.js integration
-    // For now, just dispatch a custom event for any listeners
-    if (_shadowRoot) {
-      _shadowRoot.dispatchEvent(new CustomEvent('n8n-pilot-stream-chunk', {
-        detail: { text: msg.text, index: msg.index }
-      }));
+    if (_chatHandlers) {
+      _chatHandlers.handleChunk(msg.text);
     }
   }
 
   function handleStreamDone(msg) {
     stopKeepAlive();
-    if (_shadowRoot) {
-      _shadowRoot.dispatchEvent(new CustomEvent('n8n-pilot-stream-done', {
-        detail: { fullText: msg.fullText, usage: msg.usage }
-      }));
+    if (_chatHandlers) {
+      _chatHandlers.handleStreamDone({
+        content: msg.fullText,
+        usage: msg.usage,
+        model: msg.model,
+        tokensUsed: msg.usage,
+      });
     }
   }
 
   function handleStreamError(msg) {
     stopKeepAlive();
-    if (_shadowRoot) {
-      _shadowRoot.dispatchEvent(new CustomEvent('n8n-pilot-stream-error', {
-        detail: { error: msg.error }
-      }));
+    if (_chatHandlers) {
+      _chatHandlers.handleStreamError(msg.error);
     }
   }
 

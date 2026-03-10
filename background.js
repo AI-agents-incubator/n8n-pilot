@@ -171,6 +171,68 @@ async function handleMessage(msg, sender) {
     case 'explainWorkflow':
       return generator.explain(msg.workflow);
 
+    case 'generateWorkflowStream': {
+      generationController = new AbortController();
+      activeStreamTabId = sender?.tab?.id || null;
+
+      const streamSettings = await settings.getAll();
+
+      await claudeClient.sendMessageStream({
+        systemPrompt: generator.getSystemPrompt(),
+        userPrompt: msg.prompt,
+        model: msg.model || streamSettings.claudeModel,
+        abortSignal: generationController.signal,
+        onChunk: (text, totalLength) => {
+          if (activeStreamTabId) {
+            chrome.tabs.sendMessage(activeStreamTabId, {
+              type: 'STREAM_CHUNK',
+              text,
+              index: totalLength,
+            }).catch(() => {});
+          }
+        },
+        onDone: async (result) => {
+          generationController = null;
+
+          if (activeStreamTabId) {
+            chrome.tabs.sendMessage(activeStreamTabId, {
+              type: 'STREAM_DONE',
+              fullText: result.content,
+              usage: result.tokensUsed,
+              model: result.model,
+            }).catch(() => {});
+          }
+
+          // Save to history if enabled
+          if (result.success && streamSettings.saveHistory !== false) {
+            try {
+              await history.add({
+                prompt: msg.prompt,
+                workflow: result.content,
+                model: result.model,
+                tokensUsed: result.tokensUsed,
+                duration: result.duration,
+              });
+            } catch (_) { /* ignore */ }
+          }
+
+          activeStreamTabId = null;
+        },
+        onError: (error) => {
+          generationController = null;
+          if (activeStreamTabId) {
+            chrome.tabs.sendMessage(activeStreamTabId, {
+              type: 'STREAM_ERROR',
+              error,
+            }).catch(() => {});
+          }
+          activeStreamTabId = null;
+        },
+      });
+
+      return { success: true, streaming: true };
+    }
+
     case 'cancelGeneration':
       if (generationController) {
         generationController.abort();
@@ -255,6 +317,43 @@ async function handleMessage(msg, sender) {
     case 'clearHistory':
       await history.clear();
       return { success: true };
+
+    // === Chat Memory ===
+    case 'saveChatMessage': {
+      const chatKey = 'n8nPilotChatMemory';
+      const chatData = (await chrome.storage.local.get(chatKey))[chatKey] || {};
+      const contextId = msg.workflowId || 'default';
+      if (!chatData[contextId]) chatData[contextId] = { messages: [], lastUpdated: null };
+      chatData[contextId].messages.push({
+        role: msg.role,
+        content: msg.content,
+        metadata: msg.metadata || {},
+        timestamp: new Date().toISOString(),
+      });
+      // FIFO eviction at 100
+      if (chatData[contextId].messages.length > 100) {
+        chatData[contextId].messages = chatData[contextId].messages.slice(-100);
+      }
+      chatData[contextId].lastUpdated = new Date().toISOString();
+      await chrome.storage.local.set({ [chatKey]: chatData });
+      return { success: true };
+    }
+
+    case 'getChatHistory': {
+      const chatKey2 = 'n8nPilotChatMemory';
+      const chatData2 = (await chrome.storage.local.get(chatKey2))[chatKey2] || {};
+      const ctx = msg.workflowId || 'default';
+      return chatData2[ctx]?.messages || [];
+    }
+
+    case 'clearChatHistory': {
+      const chatKey3 = 'n8nPilotChatMemory';
+      const chatData3 = (await chrome.storage.local.get(chatKey3))[chatKey3] || {};
+      const ctx3 = msg.workflowId || 'default';
+      delete chatData3[ctx3];
+      await chrome.storage.local.set({ [chatKey3]: chatData3 });
+      return { success: true };
+    }
 
     case 'searchHistory':
       return history.search(msg.query);
