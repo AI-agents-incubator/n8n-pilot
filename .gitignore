@@ -1,6 +1,15 @@
 node_modules/
 .DS_Store
 *.log
+__pycache__/
+*.pyc
+
+# Framework session state (local only)
+.claude/.framework-config
+.claude/.last_activity
+.claude/.last_session
+.claude/.session-owner
+.claude/logs/
 
 # Security: Environment variables and credentials
 .env
