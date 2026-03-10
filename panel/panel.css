@@ -614,6 +614,11 @@
   cursor: not-allowed;
 }
 
+.error-text {
+  color: var(--color-error);
+  font-style: italic;
+}
+
 /* ============================================================
    Form Elements
    ============================================================ */
@@ -792,11 +797,22 @@
   background: var(--color-bg-tertiary);
 }
 
+.list-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+}
+
 .list-item-title {
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-text-primary);
-  margin-bottom: var(--spacing-xs);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .list-item-meta {

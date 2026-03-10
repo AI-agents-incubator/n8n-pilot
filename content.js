@@ -783,6 +783,23 @@
         sendResponse({ success: true });
         break;
 
+      case 'CONTEXT_MENU_PROMPT':
+        // Inject prompt into chat input and trigger send
+        if (_shadowRoot) {
+          const chatInput = _shadowRoot.getElementById('chatInput');
+          if (chatInput && msg.prompt) {
+            chatInput.value = msg.prompt;
+            chatInput.dispatchEvent(new Event('input'));
+            // Auto-send after brief delay
+            setTimeout(() => {
+              const sendBtn = _shadowRoot.getElementById('btnSend');
+              if (sendBtn) sendBtn.click();
+            }, 100);
+          }
+        }
+        sendResponse({ success: true });
+        break;
+
       default:
         sendResponse({ error: 'Unknown message type' });
     }

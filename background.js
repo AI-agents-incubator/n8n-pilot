@@ -23,6 +23,67 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === 'install') {
     console.log('n8n Pilot installed');
   }
+
+  // Register context menu items
+  chrome.contextMenus.create({
+    id: 'n8n-pilot-explain',
+    title: 'Explain with n8n Pilot',
+    contexts: ['page', 'selection'],
+    documentUrlPatterns: ['http://localhost:*/*', 'http://127.0.0.1:*/*', 'https://*/*'],
+  });
+
+  chrome.contextMenus.create({
+    id: 'n8n-pilot-generate-code',
+    title: 'Generate Code Node',
+    contexts: ['selection'],
+    documentUrlPatterns: ['http://localhost:*/*', 'http://127.0.0.1:*/*', 'https://*/*'],
+  });
+
+  chrome.contextMenus.create({
+    id: 'n8n-pilot-optimize',
+    title: 'Optimize with AI',
+    contexts: ['page'],
+    documentUrlPatterns: ['http://localhost:*/*', 'http://127.0.0.1:*/*', 'https://*/*'],
+  });
+});
+
+// --- Context Menu Handler ---
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (!tab?.id) return;
+
+  // Ensure content script is injected
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ['content.js'],
+    });
+  } catch (_) { /* ignore */ }
+
+  let prompt = '';
+  switch (info.menuItemId) {
+    case 'n8n-pilot-explain':
+      prompt = info.selectionText
+        ? `Explain this n8n workflow element: ${info.selectionText}`
+        : 'Explain the current n8n workflow';
+      break;
+    case 'n8n-pilot-generate-code':
+      prompt = `Generate a Code node that does: ${info.selectionText || 'process data'}`;
+      break;
+    case 'n8n-pilot-optimize':
+      prompt = 'Analyze and optimize the current workflow for performance';
+      break;
+    default:
+      return;
+  }
+
+  // Show panel and send prompt
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: 'SHOW_PANEL' });
+    await chrome.tabs.sendMessage(tab.id, { type: 'CONTEXT_MENU_PROMPT', prompt });
+  } catch (err) {
+    console.warn('Context menu action failed:', err.message);
+  }
 });
 
 // --- Icon Click: toggle panel in active n8n tab ---
