@@ -1,6 +1,6 @@
 # n8n Pilot — Техническое задание и спецификация
 
-**Версия:** 3.1
+**Версия:** 3.2
 **Дата:** 2026-03-10
 **Автор:** Alex Krol + Claude
 **Статус:** Active — architecture pivot v2.0 (popup → injected side panel + smart generator)
@@ -438,6 +438,30 @@ interface CryptoModule {
 
 **Ограничение:** Ключ шифрования хранится в том же storage — это защита от casual access, но не от целенаправленной атаки с доступом к файловой системе. Для полной защиты потребовался бы OS-level keychain, но Chrome Extension API его не предоставляет.
 
+#### 4.1.1 Master Password (опционально)
+
+> Усиление модели угроз: защита от кражи Chrome-профиля (malware, физический доступ).
+
+**Режимы:**
+
+| Режим | Как хранится ключ | Защита от |
+|-------|-------------------|-----------|
+| **Default** (текущий) | JWK в `chrome.storage.local` | XSS, casual access |
+| **Master Password** | Ключ деривируется через PBKDF2 от пароля, хранится только in-memory | Кража профиля, malware, физический доступ |
+
+**Логика Master Password:**
+1. Пользователь задаёт Master Password в Settings (опционально)
+2. При установке пароля: `PBKDF2(password, salt, 100_000 iterations, 256 bit)` → encryption key
+3. Salt хранится в `chrome.storage.local` (не секрет)
+4. Encryption key хранится **только in-memory** (session variable в background.js)
+5. При каждом старте расширения / wake-up Service Worker → запрос пароля
+6. Если пароль не задан → fallback на текущую схему (JWK в storage) с предупреждением в Settings
+
+**UX:** При включённом Master Password — при первом обращении к API в сессии
+показывается модальное окно «Enter Master Password» в панели.
+
+**Phase:** 5 (polish) — не блокирует основной функционал.
+
 ---
 
 ### 4.2 Модуль: Settings (настройки)
@@ -449,10 +473,14 @@ interface CryptoModule {
 ```typescript
 // Actual DEFAULTS from lib/settings.js
 interface Settings {
-  // n8n instance
+  // n8n instance (single environment — текущая реализация v1.0)
   n8nBaseUrl: string;            // e.g. "http://localhost:5678"
   n8nApiKeyCipher: string;       // encrypted (AES-256-GCM ciphertext, base64)
   n8nApiKeyIv: string;           // IV для расшифровки (base64)
+
+  // Multi-environment (v2.0 — planned)
+  n8nEnvironments: N8nEnvironment[];  // массив окружений
+  activeEnvironmentId: string;        // ID активного окружения
 
   // Claude API
   claudeApiKeyCipher: string;    // encrypted
@@ -473,6 +501,16 @@ interface Settings {
   versionLimit: number;          // default: 30
 }
 
+// Multi-environment support (v2.0)
+interface N8nEnvironment {
+  id: string;                    // UUID
+  name: string;                  // "Dev", "Staging", "Production"
+  url: string;                   // "https://n8n.example.com"
+  apiKeyCipher: string;          // encrypted
+  apiKeyIv: string;              // IV
+  color?: string;                // badge color in panel header (e.g. "#ff5c5c" for prod)
+}
+
 interface SettingsModule {
   get(key: keyof Settings): Promise<any>;       // single key lookup
   set(updates: Partial<Settings>): Promise<Settings>;  // merge updates into stored settings
@@ -489,6 +527,16 @@ interface SettingsModule {
   importSettings(data: Partial<Settings>): Promise<void>;
 }
 ```
+
+**Multi-environment migration (v1.0 → v2.0):**
+- При первом запуске v2.0: если `n8nBaseUrl` задан, автоматически создать
+  `n8nEnvironments: [{ id: uuid(), name: 'Default', url: n8nBaseUrl, ... }]`
+  и установить `activeEnvironmentId`.
+- Старые поля `n8nBaseUrl`, `n8nApiKeyCipher`, `n8nApiKeyIv` сохраняются
+  для backward compatibility, но читаются только если `n8nEnvironments` пуст.
+- UX: selector окружения в header панели (badge с цветом + имя).
+  Смена окружения = переподключение content script + перезагрузка контекста.
+- **Phase:** 4 (Context Awareness) — после базового функционала.
 
 ---
 
@@ -543,6 +591,31 @@ interface ClaudeClient {
   // Список доступных моделей (hardcoded, не API-запрос)
   getAvailableModels(): Array<{ id: string; name: string; description: string }>;
 }
+
+// === Context Window Management (chat-memory.js) ===
+//
+// Проблема: длинная история чата + workflow JSON + node schemas = превышение
+// контекстного окна Claude (200K tokens) или неоправданные расходы на токены.
+//
+// Стратегия Context Truncation:
+//
+// 1. SLIDING WINDOW: хранить все сообщения в storage, но передавать в API
+//    только последние N (default: 20 сообщений). Старые — обрезаются.
+//
+// 2. SUMMARY COMPACTION: при превышении 20 сообщений — отправить отдельный
+//    запрос Claude: "Summarize this conversation in 3 sentences" → сохранить
+//    summary как первое system-level сообщение, удалить оригиналы.
+//
+// 3. WORKFLOW CONTEXT BUDGET:
+//    - Полный workflow JSON передаётся ТОЛЬКО при modify/explain запросах
+//    - При обычном чате — передаётся только blueprint (nodes + connections, без parameters)
+//    - Node schemas из каталога — только для запрошенных типов (не все 30)
+//
+// 4. TOKEN ESTIMATION: перед отправкой оценить размер контекста
+//    (1 token ≈ 4 chars для English, ≈ 2 chars для JSON).
+//    Если > 150K chars → принудительная обрезка старых сообщений.
+//
+// Phase: 2 (Chat + Streaming)
 
 // sendMessage возвращает unified response (и для generate, и для debug)
 interface ClaudeResponse {
@@ -610,6 +683,7 @@ interface N8nClient {
     status?: 'success' | 'error' | 'waiting';
     limit?: number;
     cursor?: string;
+    includeData?: boolean;  // default: false для списков, true для getExecution
   }): Promise<PaginatedResponse<Execution>>;
 
   getExecution(id: string): Promise<ExecutionDetail>;
@@ -664,6 +738,14 @@ interface Variable {
   type: string;
 }
 ```
+
+**Payload Size Protection:**
+- `listExecutions()` — по умолчанию `includeData=false` (только метаданные: id, status, startedAt).
+  В UI списков execution data не нужна.
+- `getExecution(id)` — возвращает полные данные, но обрезает `resultData.runData`
+  до первых 500KB (per-node). Бинарные данные (`binary` поля) заменяются на
+  `{ truncated: true, size: N }`.
+- Фронтенд: lazy-loading деталей execution (показываем метаданные, загружаем runData по клику).
 
 **Base URL:** Настраивается пользователем (e.g. `http://localhost:5678`)
 
@@ -1299,6 +1381,9 @@ Drag-handle: пользователь может расширять до 600px.
 | Man-in-the-middle | Низкая | Высокое | Только HTTPS для API |
 | Malicious n8n response | Низкая | Среднее | JSON schema validation |
 | Extension compromise | Очень низкая | Критическое | CSP, no eval, no remote code |
+| MV3 worker suspend mid-stream | Средняя | Высокое | Keep-alive ping (§17.3.1) |
+| Chrome profile theft (malware) | Низкая | Критическое | Optional Master Password (§4.1.1) |
+| Execution payload OOM | Средняя | Среднее | includeData=false, lazy-loading (§4.4) |
 
 ### 6.2 Content Security Policy
 
@@ -1613,6 +1698,52 @@ export default defineConfig({
   ],
 });
 ```
+
+#### 8.3.1a Shadow DOM Testing Strategy
+
+> **Проблема:** Closed Shadow DOM (`mode: 'closed'`) недоступен через обычные
+> Playwright-селекторы (`page.locator()`). Элементы панели невидимы для E2E.
+
+**Решение: Test Mode с Open Shadow DOM**
+
+```javascript
+// content.js — при создании Shadow DOM
+const shadowMode = globalThis.__N8N_PILOT_TEST_MODE__ ? 'open' : 'closed';
+const shadow = host.attachShadow({ mode: shadowMode });
+```
+
+```javascript
+// E2E тест — перед инъекцией панели устанавливает флаг
+await page.evaluate(() => { globalThis.__N8N_PILOT_TEST_MODE__ = true; });
+```
+
+**Доступ к Shadow DOM элементам в тестах:**
+
+```javascript
+// Helper для Playwright
+async function panelLocator(page, selector) {
+  const host = page.locator('#n8n-pilot-root');
+  // В open mode Playwright может pierce через shadowRoot
+  return host.locator(`pierce/${selector}`);
+}
+
+// Использование
+const chatInput = await panelLocator(page, '#chat-input');
+await chatInput.fill('Create a webhook workflow');
+await panelLocator(page, '#btnSend').click();
+```
+
+**Альтернатива (без pierce):**
+```javascript
+// evaluate внутри Shadow DOM
+const text = await page.evaluate(() => {
+  const host = document.getElementById('n8n-pilot-root');
+  return host.shadowRoot.querySelector('#chat-input').value;
+});
+```
+
+**Важно:** `__N8N_PILOT_TEST_MODE__` = `true` ТОЛЬКО в E2E тестах.
+В production всегда `closed` — гарантия CSS-изоляции и безопасности.
 
 #### 8.3.2 Mock Servers
 
@@ -1997,7 +2128,7 @@ app.post('/api/v1/workflows', (req, res) => { ... });
 
 - Фикс расхождений spec↔code: minor version spec (1.0 → 1.1)
 - Новая функция: major version spec (1.0 → 2.0)
-- Текущая версия: **SPEC v3.0** (architecture pivot, code v1.0.0 → v2.0.0 planned)
+- Текущая версия: **SPEC v3.2** (architecture pivot, code v1.0.0 → v2.0.0 planned)
 
 ---
 
@@ -2075,6 +2206,46 @@ PLAN содержит ~500 строк детального implementation guide 
 9. On stream end: background.js sends STREAM_DONE with full content + extracted workflow
 10. panel/chat.js finalizes message, shows workflow card if JSON detected
 ```
+
+#### 17.3.1 MV3 Service Worker Keep-Alive
+
+> **Проблема:** Manifest V3 Service Workers усыпляются Chrome при неактивности
+> (таймаут ~30s без events, максимум ~5min). Длинный streaming от Claude API
+> (10-60s) может быть прерван suspend'ом воркера.
+
+**Решение: Keep-Alive Ping**
+
+```javascript
+// panel/chat.js — при начале стриминга запускает keep-alive
+let keepAliveInterval = null;
+
+function startKeepAlive() {
+  keepAliveInterval = setInterval(() => {
+    chrome.runtime.sendMessage({ type: 'keepAlive' });
+  }, 25_000); // каждые 25s (таймаут suspend ~30s)
+}
+
+function stopKeepAlive() {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+    keepAliveInterval = null;
+  }
+}
+
+// background.js — обработчик
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === 'keepAlive') {
+    sendResponse({ alive: true });
+    return true;
+  }
+});
+```
+
+**Дополнительная защита:** `chrome.tabs.sendMessage()` в onChunk сам по себе
+является event, сбрасывающим таймер suspend. Для потоков с редкими чанками
+(>25s между ними) keep-alive ping обеспечивает непрерывность.
+
+**Phase:** 2 (Chat + Streaming) — критично для базового функционала.
 
 ### 17.4 Extension Icon Click
 
