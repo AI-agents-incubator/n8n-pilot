@@ -1,6 +1,6 @@
 # n8n Pilot — Техническое задание и спецификация
 
-**Версия:** 3.0
+**Версия:** 3.1
 **Дата:** 2026-03-10
 **Автор:** Alex Krol + Claude
 **Статус:** Active — architecture pivot v2.0 (popup → injected side panel + smart generator)
@@ -42,7 +42,7 @@ READ → PLAN → IMPLEMENT → TEST → VERIFY → REPORT
 ```bash
 npm test                  # Unit тесты (Vitest)
 npm run test:e2e          # E2E тесты (Playwright + mock servers)
-npm run build             # Build (если добавлен)
+# Build не требуется — нативные ES modules, programmatic injection (нет bundler)
 node scripts/bump-version.js {patch|minor|major}  # Версионирование
 git status / git diff     # Проверка состояния
 ```
@@ -118,6 +118,43 @@ git status / git diff     # Проверка состояния
 | Debug-режим | n8n Copilot | Переработана |
 | Инъекция в n8n editor | n8n Copilot + Chat | Переработана |
 | Чат-интерфейс | n8n Chat | Упрощён |
+
+### 1.4 Implementation Status Matrix
+
+> **Цель:** одним взглядом понять, что уже есть и что запланировано.
+
+| Module / File | Status | Phase | Notes |
+|---------------|--------|-------|-------|
+| `manifest.json` | Implemented (v1.0) | — | Needs update: remove popup, add contextMenus, web_accessible_resources |
+| `background.js` | Implemented (v1.0) | 1 | Needs update: icon click toggle, streaming relay |
+| `content.js` | Implemented (v1.0) | 1 | Needs rewrite: Shadow DOM panel injection |
+| `lib/settings.js` | Implemented | — | Stable |
+| `lib/crypto.js` | Implemented | — | Stable |
+| `lib/n8n-client.js` | Implemented | — | Stable, testing funcs planned (PLAN §6-7) |
+| `lib/claude-client.js` | Implemented | 2 | Needs: `sendMessageStream()`, `sendConversation()` |
+| `lib/workflow-generator.js` | Implemented | 3 | Needs: multi-step pipeline, blueprint-based generation |
+| `lib/workflow-validator.js` | Implemented | — | Stable |
+| `lib/history.js` | Implemented | — | Stable |
+| `lib/versions.js` | Implemented | — | Stable |
+| `lib/utils.js` | Implemented | — | Stable |
+| `panel/panel.html` | Planned | 1 | Replaces popup.html |
+| `panel/panel.css` | Planned | 1 | Replaces popup.css (`:root` → `:host`) |
+| `panel/panel.js` | Planned | 1 | Replaces popup.js (msg, routing, helpers) |
+| `panel/chat.js` | Planned | 2 | Chat UI, streaming display, workflow cards |
+| `panel/chat-memory.js` | Planned | 2 | Per-workflow conversation storage |
+| `panel/settings-view.js` | Planned | 1 | Settings form + API test |
+| `panel/workflows-view.js` | Planned | 4 | Workflow list (migrated from popup.js) |
+| `panel/executions-view.js` | Planned | 4 | Execution list (migrated from popup.js) |
+| `panel/history-view.js` | Planned | 4 | History list (migrated from popup.js) |
+| `panel/n8n-context.js` | Planned | 4 | Workflow/node detection from DOM/URL |
+| `panel/context-menu.js` | Planned | 5 | Right-click action handler |
+| `lib/prompt-analyzer.js` | Planned | 3 | Structured task → node mapping → blueprint |
+| `lib/node-catalog-core.js` | Planned | 3 | 20-30 nodes with full parameter schemas |
+| `lib/node-catalog-index.js` | Planned | 3 | ~280 nodes brief index |
+| `lib/test-results.js` | Planned | Testing | Test result storage (PLAN §7.3) |
+| `popup.html` | To Delete | 1 | Replaced by panel/panel.html |
+| `popup.js` | To Delete | 1 | Replaced by panel/*.js |
+| `popup.css` | To Delete | 1 | Replaced by panel/panel.css |
 
 ---
 
@@ -1410,7 +1447,7 @@ n8n-pilot/
 ├── CHANGELOG.md
 ├── README.md
 ├── SPEC.md                    # THIS FILE — technical specification v3.0
-└── PLAN-workflow-testing.md   # Workflow auto-testing spec (v3.1)
+└── PLAN-workflow-testing.md   # Workflow auto-testing spec (v3.2)
 ```
 
 > **File status legend:** ✅ = exists and passing, ⏳ = planned, ❌ = deleted
@@ -1542,7 +1579,7 @@ n8n-pilot/
 ✓ Generation result saves to history
 ✓ Workflow injection triggers version save
 ✓ Content script receives messages from background
-✓ Popup receives state updates from background
+✓ Panel receives state updates from background (via tabs.sendMessage)
 ```
 
 > **Note:** integration-ids.test.js и kodex-regression.test.js существуют и проверяют
@@ -1665,6 +1702,58 @@ app.post('/api/v1/workflows', (req, res) => { ... });
 ✓ Rate limiting prevents API abuse
 ```
 
+### 8.4 Coverage Map — New Modules (v2.0 architecture)
+
+> Тесты для модулей, добавляемых в рамках архитектурного pivot. Все — `⏳ PLANNED`.
+
+| Module | Test file | Key scenarios |
+|--------|-----------|---------------|
+| `panel/chat.js` | `tests/unit/chat.test.js` | Message rendering, workflow card extraction, streaming display, test button integration |
+| `panel/chat-memory.js` | `tests/unit/chat-memory.test.js` | Save/load per-workflow, 100-msg limit, FIFO eviction, cross-workflow isolation |
+| `panel/settings-view.js` | `tests/unit/settings-view.test.js` | Form validation, API test button, save/load, encryption |
+| `panel/n8n-context.js` | `tests/unit/n8n-context.test.js` | URL parsing (workflowId), SPA navigation detection, selected nodes from DOM |
+| `panel/context-menu.js` | `tests/unit/context-menu.test.js` | Action routing, selection text handling |
+| `lib/prompt-analyzer.js` | `tests/unit/prompt-analyzer.test.js` | Structured task parsing, node mapping from catalog, blueprint generation |
+| `lib/node-catalog-core.js` | `tests/unit/node-catalog.test.js` | Schema completeness (all 20-30 nodes), parameter validation |
+| `lib/node-catalog-index.js` | (same file) | Index lookup, category filtering, fallback to index for unknown nodes |
+| `content.js` (rewrite) | `tests/unit/content.test.js` | Shadow DOM creation, panel toggle, CSS isolation, n8n canvas resize |
+| `background.js` (streaming) | `tests/unit/background-stream.test.js` | SSE chunk relay, abort handling, stream error propagation |
+
+#### 8.4.1 E2E — Panel Architecture (⏳ PLANNED)
+
+```
+=== Panel Injection ===
+✓ Panel appears in n8n editor DOM
+✓ Panel toggle via extension icon click
+✓ Shadow DOM isolates CSS (no leakage)
+✓ n8n canvas resizes when panel opens/closes
+✓ Panel survives SPA navigation
+
+=== Chat + Streaming ===
+✓ Chat message sent → streaming response appears token-by-token
+✓ Workflow JSON detected → card with Copy/Inject/Save/Test
+✓ Chat history persists per-workflow
+✓ Switching workflow loads correct chat history
+✓ Abort button stops streaming
+
+=== Smart Generator ===
+✓ Guided dialog: trigger → services → output questions
+✓ Prompt analyzer maps to correct nodes from catalog
+✓ Generated workflow passes validation
+✓ Blueprint includes correct node types and connections
+
+=== Context Awareness ===
+✓ Workflow ID detected from URL
+✓ Workflow name shown in panel header
+✓ Selected nodes passed to AI context
+✓ Context updates on SPA navigation
+
+=== Context Menu ===
+✓ Right-click "Explain" sends selection to chat
+✓ Right-click "Generate Code Node" creates code node
+✓ Menu items only appear on n8n pages
+```
+
 ---
 
 ## 9. Зависимости
@@ -1775,7 +1864,7 @@ app.post('/api/v1/workflows', (req, res) => { ... });
 |----------|----------|------------|
 | Node.js | 18+ | Для запуска тестов и скриптов |
 | Chrome | 116+ | `minimum_chrome_version` в manifest.json |
-| n8n | **2.1.5** (self-hosted) | REST API v1, instance: n8n.srv927837.hstgr.cloud |
+| n8n | **2.1.5** (self-hosted) | REST API v1, instance URL задаётся в Settings |
 | Vitest | ^2.0.0 | Unit test framework |
 | Playwright | ^1.45.0 | E2E test framework |
 | Express | ^4.19.0 | Mock servers для E2E |
@@ -1787,7 +1876,7 @@ app.post('/api/v1/workflows', (req, res) => { ... });
 | Manifest | V3 | Service Worker, no popup, contextMenus, web_accessible_resources |
 
 **Self-host assumptions:**
-- n8n 2.1.5 доступен по HTTPS URL (n8n.srv927837.hstgr.cloud)
+- n8n 2.1.5 доступен по HTTPS URL (задаётся пользователем в Settings)
 - n8n API key создан через Settings → API → Generate key
 - Webhook URLs работают без дополнительной авторизации
 - Claude API key с достаточным балансом для streaming
@@ -1908,13 +1997,13 @@ app.post('/api/v1/workflows', (req, res) => { ... });
 
 - Фикс расхождений spec↔code: minor version spec (1.0 → 1.1)
 - Новая функция: major version spec (1.0 → 2.0)
-- Текущая версия: **SPEC v2.0** (synced with code v1.0.0)
+- Текущая версия: **SPEC v3.0** (architecture pivot, code v1.0.0 → v2.0.0 planned)
 
 ---
 
 ## 16. Workflow Testing — Overview
 
-> Полная техническая спецификация: **[PLAN-workflow-testing.md](./PLAN-workflow-testing.md)** (v3.0)
+> Полная техническая спецификация: **[PLAN-workflow-testing.md](./PLAN-workflow-testing.md)** (v3.2)
 
 ### 16.1 Что это
 

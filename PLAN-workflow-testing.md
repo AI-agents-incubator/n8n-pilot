@@ -1,6 +1,6 @@
 # Техническая спецификация: Автотестирование workflows в n8n Pilot
 
-**Версия:** 3.1 | **Статус:** Ready for implementation | **Обновлено:** 2026-03-10
+**Версия:** 3.2 | **Статус:** Ready for implementation | **Обновлено:** 2026-03-10
 
 ---
 
@@ -17,7 +17,7 @@
 - Извлечение/чтение секретов из n8n credentials (только reference по ID/name)
 - Запуск workflows в production режиме (только тестовые копии)
 - Создание/модификация credentials в n8n
-- Side-panel или отдельная страница — только popup
+- Отдельная страница — UI отображается в injected side panel (Shadow DOM)
 
 ### 0.3 Test Modes
 
@@ -59,6 +59,54 @@
 | **Credential read-only** | Агент НИКОГДА не пытается извлечь credential secrets | ALWAYS ON |
 | **Dry-run first** | Перед live-тестом показать план пользователю | ON in `full-live` |
 
+#### 0.4.1 Destructive Node Blocklist (конкретные типы)
+
+В `safe-live` режиме следующие ноды/операции **заблокированы**:
+
+| Node type | Заблокированные operations | Причина |
+|-----------|---------------------------|---------|
+| `n8n-nodes-base.httpRequest` | `DELETE` method | Удаление ресурсов |
+| `n8n-nodes-base.airtable` | `delete` operation | Удаление записей |
+| `n8n-nodes-base.gmail` | `delete`, `trash` | Удаление/перемещение email |
+| `n8n-nodes-base.telegram` | `deleteMessage`, `banChatMember` | Деструктивные Telegram-операции |
+| `n8n-nodes-base.slack` | `delete` (messages, channels) | Удаление контента Slack |
+| `n8n-nodes-base.postgres` / `mysql` | `executeQuery` с `DROP`/`DELETE`/`TRUNCATE` | SQL-деструкция |
+| `n8n-nodes-base.ftp` | `delete` operation | Удаление файлов |
+| `n8n-nodes-base.s3` | `delete` operation | Удаление объектов S3 |
+| `n8n-nodes-base.googleDrive` | `delete` operation | Удаление файлов Drive |
+
+**Детекция:** `isSafeForTesting(node)` проверяет `node.type` + `node.parameters.operation` / `node.parameters.method`.
+Если нода в blocklist → `testWorkflow()` возвращает `BLOCKED` с объяснением.
+
+#### 0.4.2 Domain Allowlist (для httpRequest в safe-live)
+
+```javascript
+const DEFAULT_DOMAIN_ALLOWLIST = [
+  'localhost',
+  '127.0.0.1',
+  '*.local',           // mDNS / internal
+  '*.internal',
+  '*.test',            // RFC 2606
+];
+```
+
+Пользователь может расширить через Settings → Test → «Allowed domains»:
+```
+httpbin.org, api.example.com, *.mycompany.internal
+```
+
+**Проверка:** `isDomainAllowed(url, allowlist)` парсит URL и сравнивает hostname.
+`httpRequest` ноды с URL вне allowlist → `BLOCKED` в `safe-live`, разрешены в `full-live`.
+
+#### 0.4.3 Side-effect Classification
+
+| Категория | Примеры | safe-live | full-live |
+|-----------|---------|-----------|-----------|
+| **Read-only** | httpRequest GET, airtable list, gmail read | Разрешено | Разрешено |
+| **Write (reversible)** | airtable create, gmail send draft | Разрешено (с предупреждением) | Разрешено |
+| **Write (irreversible)** | telegram send, gmail send, slack post | Заблокировано | Разрешено (с confirmation) |
+| **Destructive** | DELETE, DROP, remove | Заблокировано | Разрешено (с double confirmation) |
+
 ### 0.5 Credential Contract
 
 1. Агент использует **только существующие** credentials по ID и имени
@@ -92,7 +140,7 @@
 | Артефакт | Где хранится | Формат |
 |----------|-------------|--------|
 | Test results | `chrome.storage.local` (key: `n8nPilotTestResults`) | JSON array, max 50 entries |
-| Generated workflow | In-memory (`currentWorkflow` в popup.js) | n8n workflow JSON |
+| Generated workflow | In-memory (`currentWorkflow` в panel/chat.js) | n8n workflow JSON |
 | Test workflow (temp) | n8n instance (создаётся при deploy, удаляется при cleanup) | n8n workflow JSON |
 | Execution details | Читается из n8n API (`GET /api/v1/executions/{id}`) | n8n execution JSON |
 | Mock server config | `tests/e2e/mocks/n8n-server.js` (in-memory data) | Express routes |
@@ -581,34 +629,59 @@ export async function callWebhook(webhookPath, data = {}, timeout = 30_000) {
 
 /**
  * Ждать появления execution для workflow (polling).
+ *
+ * Стратегия корреляции: correlationId
+ * ------------------------------------
+ * Webhook body содержит `{ __n8nPilotCorrelationId: "<uuid>" }`.
+ * Тестовый workflow имеет Code node в начале, который копирует correlationId
+ * в execution metadata. При polling ищем execution по этому ID.
+ *
+ * Fallback: если correlationId не найден в execution data, используем
+ * workflowId + afterTimestamp (менее надёжно при параллельных запусках).
+ *
  * @param {string} workflowId — ID workflow в n8n
  * @param {Object} options
  * @param {number} options.timeout — макс. ожидание (default: 60000)
  * @param {number} options.interval — интервал polling (default: 2000)
- * @param {string} options.afterTimestamp — искать executions после этого ISO timestamp
+ * @param {string} options.correlationId — UUID для точного match execution
+ * @param {string} options.afterTimestamp — fallback: искать executions после ISO timestamp
  * @returns {Object|null} — execution result или null если timeout
  */
 export async function waitForExecution(workflowId, {
   timeout = 60_000,
   interval = 2_000,
+  correlationId = null,
   afterTimestamp = null,
 } = {}) {
   const startTime = Date.now();
 
   while (Date.now() - startTime < timeout) {
-    const result = await listExecutions({ workflowId, limit: 5 });
+    const result = await listExecutions({ workflowId, limit: 10 });
     const executions = result?.data || [];
 
-    // Ищем execution после afterTimestamp
-    const match = executions.find(ex => {
-      if (afterTimestamp && ex.startedAt) {
-        return new Date(ex.startedAt) > new Date(afterTimestamp);
-      }
-      return true;
-    });
+    // Стратегия 1: точный match по correlationId в execution data
+    let match = null;
+    if (correlationId) {
+      match = executions.find(ex => {
+        // correlationId хранится в первом node output → $json.__n8nPilotCorrelationId
+        const firstNodeData = ex.data?.resultData?.runData;
+        if (!firstNodeData) return false;
+        const firstNode = Object.values(firstNodeData)[0];
+        return firstNode?.[0]?.data?.main?.[0]?.[0]?.json?.__n8nPilotCorrelationId === correlationId;
+      });
+    }
+
+    // Стратегия 2 (fallback): по afterTimestamp
+    if (!match && afterTimestamp) {
+      match = executions.find(ex => {
+        if (ex.startedAt) {
+          return new Date(ex.startedAt) > new Date(afterTimestamp);
+        }
+        return false;
+      });
+    }
 
     if (match && (match.status === 'success' || match.status === 'error')) {
-      // Получаем полные данные execution
       return getExecution(match.id);
     }
 
@@ -677,12 +750,13 @@ export async function testWorkflow(workflowData, {
     // 5. Activate
     await activateWorkflow(deployedWorkflowId);
 
-    // 6. Execute via webhook
+    // 6. Execute via webhook with correlationId
+    const correlationId = uuid();
     const beforeExec = new Date().toISOString();
 
     let webhookResult;
     try {
-      webhookResult = await callWebhook(webhookPath, {}, 30_000);
+      webhookResult = await callWebhook(webhookPath, { __n8nPilotCorrelationId: correlationId }, 30_000);
     } catch (err) {
       if (err.name === 'AbortError') {
         // Webhook timeout — fallback to polling
@@ -692,13 +766,14 @@ export async function testWorkflow(workflowData, {
       }
     }
 
-    // 7. Get execution details
+    // 7. Get execution details (correlationId primary, afterTimestamp fallback)
     let execution;
     if (webhookResult && webhookResult.ok) {
       // Синхронный ответ получен — но всё равно получим execution для nodeResults
       execution = await waitForExecution(deployedWorkflowId, {
         timeout: 15_000,
         interval: 1_000,
+        correlationId,
         afterTimestamp: beforeExec,
       });
     } else {
@@ -706,6 +781,7 @@ export async function testWorkflow(workflowData, {
       execution = await waitForExecution(deployedWorkflowId, {
         timeout,
         interval: 2_000,
+        correlationId,
         afterTimestamp: beforeExec,
       });
     }
@@ -964,24 +1040,22 @@ import * as testResults from './lib/test-results.js';
     }
 ```
 
-### 7.4. `popup.html` — кнопка Test + секция результатов
+### 7.4. `panel/panel.html` — кнопка Test + секция результатов
 
-**Файл:** 227 строк. Текущая структура:
-- L1-9: head
-- L10-22: header
-- L24-31: tab-nav (5 вкладок: Generate, Workflows, Executions, History, Debug)
-- L34-70: Generate tab (prompt, model, generate btn, output-section с кнопками Copy/Save/Inject/Download)
-- L72-141: Workflows/Executions/History/Debug tabs
-- L142-151: Status bar + footer
-- L152-227: Settings modal
+> **Architecture note (v3.1):** После архитектурного pivot popup→panel, все UI-элементы
+> тестирования размещаются внутри injected side panel (Shadow DOM). Элементы доступны
+> через `shadowRoot.getElementById()` в panel/chat.js.
 
-**Точка вставки 1 — кнопка Test (L64, после кнопки Download в `output-actions`):**
+**Контекст:** panel.html — основной HTML-шаблон панели, загружаемый в Shadow DOM.
+Секция тестирования встраивается в workflow card (после кнопок Copy/Inject/Save).
+
+**Кнопка Test в workflow card:**
 
 ```html
 <button id="btnTestOutput" class="btn btn-primary btn-small" title="Deploy & test workflow">▶ Test</button>
 ```
 
-**Точка вставки 2 — секция результатов теста (L69, после `<div id="json-output" ...>`, перед закрытием `output-section`):**
+**Секция результатов теста (внутри workflow card):**
 
 ```html
 <!-- Test Results Section -->
@@ -1014,23 +1088,17 @@ import * as testResults from './lib/test-results.js';
 </div>
 ```
 
-### 7.5. `popup.js` — логика тестирования
+### 7.5. `panel/chat.js` — логика тестирования
 
-**Файл:** 861 строк. Текущая структура:
-- L1-63: Helpers (`msg()`, `formatJson()`, `timeAgo()`, `escapeHtml()`, `showLoading()`, `hideLoading()`, `$()`)
-- L65-95: Tab system (`initTabs()`)
-- L97-148: Status bar (`updateStatusBar()`)
-- L150-296: Settings (`initSettings()`, `loadSettings()`, `saveSettings()`, `clearData()`)
-- L298-457: Generate tab (`initGenerate()`, `generateWorkflow()`, `copyOutput()`, `saveToN8n()`, `injectWorkflow()`, `downloadOutput()`)
-- L439-799: Workflows/Executions/History/Debug tabs
-- L841-861: DOMContentLoaded init
+> **Architecture note (v3.1):** Логика тестирования мигрирует из popup.js в panel/chat.js.
+> DOM-доступ через `shadowRoot.getElementById()`. Сообщения в background.js через `msg()`.
 
-**Точка вставки 1 — модульная переменная (L302, после `let currentWorkflow = null;`):**
+**Модульная переменная:**
 ```javascript
 let lastTestResult = null;
 ```
 
-**Точка вставки 2 — в `initGenerate()` (L315, после `downloadBtn` listener):**
+**Инициализация (в setup-функции chat.js):**
 ```javascript
   const testBtn = $('btnTestOutput');
   const testRerunBtn = $('btnTestRerun');
@@ -1041,7 +1109,7 @@ let lastTestResult = null;
   if (testFixBtn) testFixBtn.addEventListener('click', fixAndRetest);
 ```
 
-**Точка вставки 3 — новые функции (L437, после `downloadOutput()`, перед `// WORKFLOWS TAB`):**
+**Функции тестирования (в panel/chat.js):**
 
 ```javascript
 // ============================================================================
@@ -1225,21 +1293,21 @@ async function fixAndRetest() {
 }
 ```
 
-**Точка вставки 4 — в DOMContentLoaded (L854, после `initDebug();`):**
-```javascript
-    // initTest не нужен — тест-кнопки инициализируются в initGenerate()
-```
+**Инициализация:** тест-кнопки инициализируются при создании workflow card в chat.js (не требуется отдельный init).
 
-### 7.6. `popup.css` — стили для тест-результатов
+### 7.6. `panel/panel.css` — стили для тест-результатов
 
-**Файл:** 967 строк. CSS custom properties (`:root`, L12-56):
+> **Architecture note (v3.1):** Стили мигрируют из popup.css в panel/panel.css.
+> CSS custom properties объявляются в `:host` (Shadow DOM), не в `:root`.
+
+**CSS custom properties (`:host`):**
 - Colors: `--color-success: #37c896`, `--color-error: #ff5c5c`, `--color-warning: #ffc947`, `--color-info: #5ba8ff`
 - Spacing: `--spacing-xs: 4px`, `--spacing-sm: 8px`, `--spacing-md: 12px`, `--spacing-lg: 16px`
 - Transitions: `--transition-fast: 150ms ease-out`
 
 **Все новые стили ДОЛЖНЫ использовать CSS custom properties** (не хардкодить цвета).
 
-**Точка вставки:** в конец файла (после L967).
+**Точка вставки:** в конец panel.css.
 
 ```css
 /* ============================================================
@@ -1478,11 +1546,13 @@ describe('callWebhook', () => {
 });
 
 describe('waitForExecution', () => {
-  // 25. Находит execution после afterTimestamp
+  // 25. Находит execution по correlationId (primary strategy)
   // 26. Polling — несколько попыток до success
   // 27. Timeout → возвращает null
   // 28. Execution в статусе 'error' → тоже возвращает
-  // 29. Игнорирует executions до afterTimestamp
+  // 29. Fallback: afterTimestamp когда correlationId не найден
+  // 29a. Игнорирует executions до afterTimestamp (fallback)
+  // 29b. correlationId match приоритетнее afterTimestamp
 });
 
 describe('testWorkflow', () => {
@@ -1642,7 +1712,7 @@ npm run test:e2e                   # E2E с mock серверами (Playwright)
 | 10 | n8n не отвечает | `request()` кидает error → показываем: «n8n connection failed» | Существующий error handling в `request()` |
 | 11 | Webhook вернул не-JSON | Парсим как raw text, показываем в результатах | `callWebhook()` → `{ raw: responseText }` |
 | 12 | Нет n8n API key | `request()` кидает: «n8n API key not configured» | Существующая проверка в `request()` L17 |
-| 13 | Workflow невалидный | Рекомендация: вызвать `validate()` перед тестом в popup.js | Проверка в `testCurrentWorkflow()` |
+| 13 | Workflow невалидный | Рекомендация: вызвать `validate()` перед тестом в panel/chat.js | Проверка в `testCurrentWorkflow()` |
 | 14 | Cleanup не удался | Логируем `console.warn`, НЕ кидаем ошибку. Показываем предупреждение | `finally` block в `testWorkflow()` |
 | 15 | Workflow с credentials для httpRequest (опциональный) | Если `node.credentials` есть → обрабатываем. Если нет → пропускаем | Динамический парсинг `node.credentials` |
 | 16 | Два credentials одного типа в РАЗНЫХ нодах | Каждая нода обрабатывается независимо — может быть auto-match для обеих | `matchCredentials()` → per-node loop |
@@ -1692,9 +1762,9 @@ npm run test:e2e                   # E2E с mock серверами (Playwright)
 2. `lib/n8n-client.js` — функции: `prepareTestWorkflow()`, `callWebhook()`, `waitForExecution()`, `testWorkflow()` + helpers (`findTriggerNode`, `parseNodeResults`, `extractExecutionError`)
 3. `lib/test-results.js` — новый модуль (по паттерну `lib/history.js`)
 4. `background.js` — import `testResults`, case блоки: `testWorkflow`, `getTestResults`, `clearTestResults`
-5. `popup.html` — кнопка `▶ Test` в `output-actions`, секция `#test-section`
-6. `popup.js` — `testCurrentWorkflow()`, `updateTestProgress()`, `showTestResult()`
-7. `popup.css` — стили для `.test-section`, `.test-result-card`, `.test-node-log`
+5. `panel/panel.html` — кнопка `▶ Test` в workflow card, секция `#test-section`
+6. `panel/chat.js` — `testCurrentWorkflow()`, `updateTestProgress()`, `showTestResult()`
+7. `panel/panel.css` — стили для `.test-section`, `.test-result-card`, `.test-node-log`
 8. Unit тесты: `tests/unit/n8n-client-execute.test.js` (~20 тестов для prepareTestWorkflow, callWebhook, waitForExecution)
 9. Unit тесты: `tests/unit/test-results.test.js` (~15 тестов)
 10. Mock сервер: `tests/e2e/mocks/n8n-server.js` — добавить `POST /webhook/:path`
@@ -1702,15 +1772,15 @@ npm run test:e2e                   # E2E с mock серверами (Playwright)
 ### Фаза 2: Credentials matching
 11. `lib/n8n-client.js` — `matchCredentials()`, `applyCredentials()`
 12. `background.js` — case `checkCredentials`
-13. `popup.js` — credential check в `testCurrentWorkflow()`, `showCredentialDialog()`
-14. `popup.html` — `#test-credential-dialog`
-15. `popup.css` — стили для `.test-credential-dialog`
+13. `panel/chat.js` — credential check в `testCurrentWorkflow()`, `showCredentialDialog()`
+14. `panel/panel.html` — `#test-credential-dialog`
+15. `panel/panel.css` — стили для `.test-credential-dialog`
 16. Mock сервер — расширить credentials list (больше типов)
 17. Unit тесты: `tests/unit/n8n-client-execute.test.js` — добавить ~15 тестов для matchCredentials
 
 ### Фаза 3: Smart error analysis
 18. `lib/workflow-generator.js` — `analyzeError()` через Claude API
-19. `popup.js` — `fixAndRetest()`: analyzeError → apply fix → re-test (макс 3 попытки)
+19. `panel/chat.js` — `fixAndRetest()`: analyzeError → apply fix → re-test (макс 3 попытки)
 20. Unit тесты для error analysis (~10 тестов)
 
 ### Фаза 4: Advanced
