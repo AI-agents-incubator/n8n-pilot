@@ -69,6 +69,17 @@ globalThis.chrome = {
     contains: vi.fn(async () => true),
     request: vi.fn(async () => true),
   },
+  action: {
+    onClicked: {
+      addListener: vi.fn(),
+    },
+  },
+  contextMenus: {
+    create: vi.fn(),
+    onClicked: {
+      addListener: vi.fn(),
+    },
+  },
   notifications: {
     create: vi.fn(),
   },

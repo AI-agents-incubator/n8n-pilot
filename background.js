@@ -13,11 +13,39 @@ import * as versions from './lib/versions.js';
 // Active generation abort controller
 let generationController = null;
 
+// Active streaming tab ID for routing stream events
+let activeStreamTabId = null;
+
 // --- Extension Lifecycle ---
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === 'install') {
     console.log('n8n Pilot installed');
+  }
+});
+
+// --- Icon Click: toggle panel in active n8n tab ---
+
+chrome.action.onClicked.addListener(async (tab) => {
+  if (!tab.id || !tab.url) return;
+
+  try {
+    // Ensure content script is injected
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ['content.js'],
+    });
+  } catch (err) {
+    // May already be injected or page not accessible
+    if (!err.message.includes('Cannot access')) {
+      console.warn('Content script injection on click failed:', err.message);
+    }
+  }
+
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_PANEL' });
+  } catch (err) {
+    console.warn('Toggle panel failed:', err.message);
   }
 });
 
@@ -315,6 +343,10 @@ async function handleMessage(msg, sender) {
 
       return { success: true, versioned: false };
     }
+
+    // === Keep-Alive (MV3 Service Worker) ===
+    case 'keepAlive':
+      return { alive: true };
 
     // === Permission request ===
     case 'requestN8nPermission': {

@@ -1,7 +1,8 @@
 /**
  * n8n Pilot — Content Script
  * Injected programmatically ONLY on n8n pages.
- * Handles: workflow injection, notifications, save detection.
+ * Handles: Shadow DOM panel injection, workflow injection,
+ * notifications, save detection, stream forwarding.
  */
 
 (function () {
@@ -9,9 +10,496 @@
   if (window.__n8nPilotInjected) return;
   window.__n8nPilotInjected = true;
 
-  // --- Message listener from background ---
+  let _shadowRoot = null;
+  let _panelHost = null;
+  let _keepAliveInterval = null;
+
+  // --- Panel Creation ---
+
+  async function createPanel() {
+    if (_panelHost) return; // Already created
+
+    // Create host element
+    _panelHost = document.createElement('div');
+    _panelHost.id = 'n8n-pilot-host';
+    _panelHost.style.cssText = `
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 380px;
+      height: 100vh;
+      z-index: 99999;
+      border: none;
+      margin: 0;
+      padding: 0;
+    `;
+
+    // Attach Shadow DOM — use open mode in test mode for E2E access
+    const shadowMode = window.__N8N_PILOT_TEST_MODE__ ? 'open' : 'closed';
+    _shadowRoot = _panelHost.attachShadow({ mode: shadowMode });
+
+    // Load CSS
+    try {
+      const cssUrl = chrome.runtime.getURL('panel/panel.css');
+      const cssResp = await fetch(cssUrl);
+      const cssText = await cssResp.text();
+
+      const style = document.createElement('style');
+      style.textContent = cssText;
+      _shadowRoot.appendChild(style);
+    } catch (err) {
+      console.error('[n8n Pilot] Failed to load panel CSS:', err);
+    }
+
+    // Load HTML
+    try {
+      const htmlUrl = chrome.runtime.getURL('panel/panel.html');
+      const htmlResp = await fetch(htmlUrl);
+      const htmlText = await htmlResp.text();
+
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = htmlText;
+      // Move all children into shadow root
+      while (wrapper.firstChild) {
+        _shadowRoot.appendChild(wrapper.firstChild);
+      }
+    } catch (err) {
+      console.error('[n8n Pilot] Failed to load panel HTML:', err);
+    }
+
+    // Append to page
+    document.body.appendChild(_panelHost);
+
+    // Push n8n canvas
+    pushCanvas(true);
+
+    // Load panel scripts
+    await loadPanelScripts();
+  }
+
+  async function loadPanelScripts() {
+    // Load settings-view.js first (it exposes globals), then panel.js
+    try {
+      const settingsUrl = chrome.runtime.getURL('panel/settings-view.js');
+      const settingsResp = await fetch(settingsUrl);
+      const settingsCode = await settingsResp.text();
+      // Execute in page context with access to chrome API
+      const settingsFn = new Function('chrome', '_root', settingsCode + '\nreturn { initSettingsView, loadSettingsData };');
+      // We can't use new Function for chrome access in content script context,
+      // so we eval in a controlled way via script injection into shadow root
+    } catch (err) {
+      console.error('[n8n Pilot] Failed to load settings script:', err);
+    }
+
+    // Instead of dynamic script loading (CSP issues), inline the panel logic
+    initPanelController();
+  }
+
+  /**
+   * Inline panel controller — replaces panel.js module loading.
+   * Since content scripts can't use ES modules, we inline the core logic.
+   */
+  function initPanelController() {
+    if (!_shadowRoot) return;
+
+    const $ = (id) => _shadowRoot.getElementById(id);
+    const $q = (sel) => _shadowRoot.querySelector(sel);
+    const $qa = (sel) => _shadowRoot.querySelectorAll(sel);
+
+    // --- View Routing ---
+    $qa('.header-btn[data-view]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const viewId = btn.dataset.view;
+        toggleDrawer(viewId, btn);
+      });
+    });
+
+    $qa('.btn-close-drawer').forEach(btn => {
+      btn.addEventListener('click', () => {
+        closeDrawer(btn.dataset.close);
+      });
+    });
+
+    function toggleDrawer(viewId, triggerBtn) {
+      const drawer = $(viewId);
+      if (!drawer) return;
+
+      const isOpen = !drawer.classList.contains('hidden');
+
+      // Close all drawers
+      $qa('.view-container.drawer').forEach(d => d.classList.add('hidden'));
+      $qa('.header-btn[data-view]').forEach(b => b.classList.remove('active'));
+
+      if (!isOpen) {
+        drawer.classList.remove('hidden');
+        if (triggerBtn) triggerBtn.classList.add('active');
+
+        // Load data on open
+        if (viewId === 'settingsView') loadSettingsData();
+      }
+    }
+
+    function closeDrawer(viewId) {
+      const drawer = $(viewId);
+      if (drawer) drawer.classList.add('hidden');
+      $qa('.header-btn[data-view]').forEach(b => b.classList.remove('active'));
+    }
+
+    // --- Collapse Toggle ---
+    const collapseBtn = $('btnCollapsePanel');
+    if (collapseBtn) {
+      collapseBtn.addEventListener('click', () => {
+        const container = $('panelContainer');
+        if (!container) return;
+
+        const isCollapsed = container.classList.toggle('collapsed');
+        _panelHost.style.width = isCollapsed ? '48px' : '380px';
+        pushCanvas(!isCollapsed);
+      });
+    }
+
+    // --- Settings View ---
+    initSettingsController($, $q, $qa);
+
+    // --- Status Bar ---
+    updateStatusBar($);
+    updateModelIndicator($);
+
+    // Expose update function for settings view
+    window.__n8nPilotPanel = {
+      updateStatusBar: () => updateStatusBar($),
+      $,
+      $q,
+      $qa,
+    };
+  }
+
+  // --- Settings Controller (inlined from settings-view.js) ---
+
+  function initSettingsController($) {
+    const saveBtn = $('btnSaveSettings');
+    const resetBtn = $('btnResetSettings');
+    const testN8nBtn = $('btnTestN8n');
+    const testClaudeBtn = $('btnTestClaude');
+
+    if (saveBtn) saveBtn.addEventListener('click', () => saveSettings($));
+    if (resetBtn) resetBtn.addEventListener('click', () => resetAllData($));
+    if (testN8nBtn) testN8nBtn.addEventListener('click', () => testN8nConnection($));
+    if (testClaudeBtn) testClaudeBtn.addEventListener('click', () => testClaudeConnection($));
+  }
+
+  function loadSettingsData() {
+    if (!_shadowRoot) return;
+    const $ = (id) => _shadowRoot.getElementById(id);
+
+    _msg('getSettings').then(result => {
+      if (result) {
+        const urlEl = $('settingsN8nUrl');
+        const modelEl = $('settingsClaudeModel');
+        const autoInjectEl = $('settingsAutoInject');
+        const saveHistoryEl = $('settingsSaveHistory');
+        const notificationsEl = $('settingsNotifications');
+
+        if (urlEl) urlEl.value = result.n8nBaseUrl || '';
+        if (modelEl) modelEl.value = result.claudeModel || 'claude-sonnet-4-5-20250929';
+        if (autoInjectEl) autoInjectEl.checked = result.autoInject !== false;
+        if (saveHistoryEl) saveHistoryEl.checked = result.saveHistory !== false;
+        if (notificationsEl) notificationsEl.checked = result.notifications !== false;
+      }
+
+      // Show placeholder if key is set
+      const n8nKeyEl = $('settingsN8nApiKey');
+      const claudeKeyEl = $('settingsClaudeApiKey');
+      if (n8nKeyEl) n8nKeyEl.value = '';
+      if (claudeKeyEl) claudeKeyEl.value = '';
+
+      _msg('getApiKeyStatus', { provider: 'n8n' }).then(status => {
+        if (n8nKeyEl && status?.hasKey) {
+          n8nKeyEl.placeholder = '\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (key saved)';
+        } else if (n8nKeyEl) {
+          n8nKeyEl.placeholder = 'Enter n8n API key';
+        }
+      }).catch(() => {});
+
+      _msg('getApiKeyStatus', { provider: 'claude' }).then(status => {
+        if (claudeKeyEl && status?.hasKey) {
+          claudeKeyEl.placeholder = '\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (key saved)';
+        } else if (claudeKeyEl) {
+          claudeKeyEl.placeholder = 'Enter Claude API key';
+        }
+      }).catch(() => {});
+    }).catch(error => {
+      console.error('[n8n Pilot] Error loading settings:', error);
+    });
+  }
+
+  async function saveSettings($) {
+    const n8nUrl = ($('settingsN8nUrl') || {}).value || '';
+    const n8nApiKey = ($('settingsN8nApiKey') || {}).value || '';
+    const claudeApiKey = ($('settingsClaudeApiKey') || {}).value || '';
+    const claudeModel = ($('settingsClaudeModel') || {}).value || 'claude-sonnet-4-5-20250929';
+    const autoInject = ($('settingsAutoInject') || {}).checked !== false;
+    const saveHistory = ($('settingsSaveHistory') || {}).checked !== false;
+    const notifications = ($('settingsNotifications') || {}).checked !== false;
+
+    try {
+      await _msg('updateSettings', {
+        settings: { n8nBaseUrl: n8nUrl, claudeModel, autoInject, saveHistory, notifications }
+      });
+
+      if (n8nApiKey) await _msg('setApiKey', { provider: 'n8n', apiKey: n8nApiKey });
+      if (claudeApiKey) await _msg('setApiKey', { provider: 'claude', apiKey: claudeApiKey });
+
+      if (n8nUrl) {
+        try { await _msg('requestN8nPermission', { url: n8nUrl }); } catch (_) { /* ignore */ }
+      }
+
+      showTestResult($, 'n8nTestResult', true, 'Settings saved');
+      updateStatusBar($);
+    } catch (error) {
+      showTestResult($, 'n8nTestResult', false, 'Error: ' + error.message);
+    }
+  }
+
+  async function resetAllData($) {
+    const resetBtn = $('btnResetSettings');
+    if (!resetBtn) return;
+
+    if (resetBtn.dataset.confirming === 'true') {
+      try {
+        await _msg('resetSettings');
+        await _msg('clearHistory');
+        resetBtn.dataset.confirming = 'false';
+        resetBtn.textContent = 'Reset All Data';
+        loadSettingsData();
+        showTestResult($, 'n8nTestResult', true, 'All data cleared');
+      } catch (error) {
+        showTestResult($, 'n8nTestResult', false, 'Error: ' + error.message);
+      }
+    } else {
+      resetBtn.dataset.confirming = 'true';
+      resetBtn.textContent = 'Click again to confirm';
+      setTimeout(() => {
+        if (resetBtn.dataset.confirming === 'true') {
+          resetBtn.dataset.confirming = 'false';
+          resetBtn.textContent = 'Reset All Data';
+        }
+      }, 3000);
+    }
+  }
+
+  async function testN8nConnection($) {
+    const btn = $('btnTestN8n');
+    if (btn) btn.disabled = true;
+
+    try {
+      const url = ($('settingsN8nUrl') || {}).value;
+      const apiKey = ($('settingsN8nApiKey') || {}).value;
+      if (url) await _msg('updateSettings', { settings: { n8nBaseUrl: url } });
+      if (apiKey) await _msg('setApiKey', { provider: 'n8n', apiKey });
+      if (url) {
+        try { await _msg('requestN8nPermission', { url }); } catch (_) { /* ignore */ }
+      }
+
+      const result = await _msg('testN8nConnection');
+      if (result?.connected) {
+        showTestResult($, 'n8nTestResult', true, `Connected (v${result.version || '?'})`);
+      } else {
+        showTestResult($, 'n8nTestResult', false, result?.error || 'Connection failed');
+      }
+    } catch (error) {
+      showTestResult($, 'n8nTestResult', false, error.message);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function testClaudeConnection($) {
+    const btn = $('btnTestClaude');
+    if (btn) btn.disabled = true;
+
+    try {
+      const apiKey = ($('settingsClaudeApiKey') || {}).value;
+      if (apiKey) await _msg('setApiKey', { provider: 'claude', apiKey });
+
+      const result = await _msg('testClaudeConnection');
+      if (result?.connected) {
+        showTestResult($, 'claudeTestResult', true, 'Connected');
+      } else {
+        showTestResult($, 'claudeTestResult', false, result?.error || 'Connection failed');
+      }
+    } catch (error) {
+      showTestResult($, 'claudeTestResult', false, error.message);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function showTestResult($, elementId, success, message) {
+    const el = $(elementId);
+    if (!el) return;
+    el.classList.remove('hidden', 'success', 'error');
+    el.classList.add(success ? 'success' : 'error');
+    el.textContent = message;
+    setTimeout(() => el.classList.add('hidden'), 5000);
+  }
+
+  // --- Status Bar ---
+
+  async function updateStatusBar($) {
+    const dot = $('statusDot');
+    const text = $('statusText');
+    if (!dot || !text) return;
+
+    try {
+      const settingsData = await _msg('getSettings');
+      const hasN8n = !!(settingsData && settingsData.n8nBaseUrl);
+      let hasClaude = false;
+      try {
+        const claudeStatus = await _msg('getApiKeyStatus', { provider: 'claude' });
+        hasClaude = !!(claudeStatus && claudeStatus.hasKey);
+      } catch (_) { /* ignore */ }
+
+      let n8nOk = false;
+      let claudeOk = false;
+
+      if (hasN8n) {
+        try {
+          const r = await _msg('testN8nConnection');
+          n8nOk = r && r.connected;
+        } catch (_) { /* ignore */ }
+      }
+
+      if (hasClaude) {
+        try {
+          const r = await _msg('testClaudeConnection');
+          claudeOk = r && r.connected;
+        } catch (_) { /* ignore */ }
+      }
+
+      if (n8nOk && claudeOk) {
+        dot.className = 'status-dot connected';
+        text.textContent = 'Connected';
+      } else if (n8nOk || claudeOk) {
+        dot.className = 'status-dot partial';
+        text.textContent = n8nOk ? 'n8n OK' : 'Claude OK';
+      } else if (hasN8n || hasClaude) {
+        dot.className = 'status-dot';
+        text.textContent = 'Connection failed';
+      } else {
+        dot.className = 'status-dot';
+        text.textContent = 'Not configured';
+      }
+    } catch (error) {
+      console.error('[n8n Pilot] Status check error:', error);
+      if (dot) dot.className = 'status-dot';
+      if (text) text.textContent = 'Error';
+    }
+  }
+
+  async function updateModelIndicator($) {
+    const indicator = $('modelIndicator');
+    if (!indicator) return;
+
+    try {
+      const settings = await _msg('getSettings');
+      const model = settings?.claudeModel || 'claude-sonnet-4-5-20250929';
+      const short = model.replace(/^claude-/, '').replace(/-\d{8}$/, '');
+      indicator.textContent = short;
+    } catch (_) {
+      indicator.textContent = 'claude-sonnet';
+    }
+  }
+
+  // --- Canvas Push ---
+
+  function pushCanvas(panelOpen) {
+    const appEl = document.querySelector('#app')
+      || document.querySelector('.main-content')
+      || document.querySelector('[class*="container"]');
+    if (appEl) {
+      appEl.style.marginRight = panelOpen ? '380px' : '0';
+    }
+  }
+
+  // --- Panel Toggle ---
+
+  function togglePanel() {
+    if (!_panelHost) {
+      createPanel();
+      return;
+    }
+
+    const isVisible = _panelHost.style.display !== 'none';
+    _panelHost.style.display = isVisible ? 'none' : 'block';
+    pushCanvas(!isVisible);
+  }
+
+  function showPanel() {
+    if (!_panelHost) {
+      createPanel();
+    } else {
+      _panelHost.style.display = 'block';
+      pushCanvas(true);
+    }
+  }
+
+  function hidePanel() {
+    if (_panelHost) {
+      _panelHost.style.display = 'none';
+      pushCanvas(false);
+    }
+  }
+
+  // --- Keep-Alive for MV3 Service Worker ---
+
+  function startKeepAlive() {
+    if (_keepAliveInterval) return;
+    _keepAliveInterval = setInterval(() => {
+      _msg('keepAlive').catch(() => {});
+    }, 25000);
+  }
+
+  function stopKeepAlive() {
+    if (_keepAliveInterval) {
+      clearInterval(_keepAliveInterval);
+      _keepAliveInterval = null;
+    }
+  }
+
+  // --- Messaging ---
+
+  function _msg(action, data = {}) {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ action, ...data }, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve(response);
+        }
+      });
+    });
+  }
+
+  // --- Message Listener ---
+
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     switch (msg.type) {
+      case 'TOGGLE_PANEL':
+        togglePanel();
+        sendResponse({ success: true });
+        break;
+
+      case 'SHOW_PANEL':
+        showPanel();
+        sendResponse({ success: true });
+        break;
+
+      case 'HIDE_PANEL':
+        hidePanel();
+        sendResponse({ success: true });
+        break;
+
       case 'INJECT_WORKFLOW':
         injectWorkflow(msg.workflow).then(sendResponse);
         return true; // async
@@ -25,10 +513,55 @@
         getCurrentWorkflow().then(sendResponse);
         return true; // async
 
+      case 'STREAM_CHUNK':
+        handleStreamChunk(msg);
+        sendResponse({ success: true });
+        break;
+
+      case 'STREAM_DONE':
+        handleStreamDone(msg);
+        sendResponse({ success: true });
+        break;
+
+      case 'STREAM_ERROR':
+        handleStreamError(msg);
+        sendResponse({ success: true });
+        break;
+
       default:
         sendResponse({ error: 'Unknown message type' });
     }
   });
+
+  // --- Stream Handlers (Phase 2 will expand these) ---
+
+  function handleStreamChunk(msg) {
+    // Will be implemented in Phase 2 - chat.js integration
+    // For now, just dispatch a custom event for any listeners
+    if (_shadowRoot) {
+      _shadowRoot.dispatchEvent(new CustomEvent('n8n-pilot-stream-chunk', {
+        detail: { text: msg.text, index: msg.index }
+      }));
+    }
+  }
+
+  function handleStreamDone(msg) {
+    stopKeepAlive();
+    if (_shadowRoot) {
+      _shadowRoot.dispatchEvent(new CustomEvent('n8n-pilot-stream-done', {
+        detail: { fullText: msg.fullText, usage: msg.usage }
+      }));
+    }
+  }
+
+  function handleStreamError(msg) {
+    stopKeepAlive();
+    if (_shadowRoot) {
+      _shadowRoot.dispatchEvent(new CustomEvent('n8n-pilot-stream-error', {
+        detail: { error: msg.error }
+      }));
+    }
+  }
 
   // --- Workflow Injection ---
 
@@ -41,7 +574,6 @@
         if (navigator.clipboard && navigator.clipboard.writeText) {
           await navigator.clipboard.writeText(json);
         } else {
-          // Fallback for non-secure contexts (HTTP)
           const textarea = document.createElement('textarea');
           textarea.value = json;
           textarea.style.position = 'fixed';
@@ -50,14 +582,14 @@
           textarea.select();
           const ok = document.execCommand('copy');
           document.body.removeChild(textarea);
-          if (!ok) throw new Error("Fallback copy command failed");
+          if (!ok) throw new Error('Fallback copy command failed');
         }
       } catch (clipErr) {
         showNotification(false, `Clipboard failed: ${clipErr.message}. Copy JSON manually.`);
         return { success: false, error: `Clipboard failed: ${clipErr.message}` };
       }
 
-      // Step 2: Try to find the n8n canvas and simulate paste
+      // Step 2: Try to find n8n canvas and simulate paste
       const canvas = document.querySelector('.jtk-surface-nopan')
         || document.querySelector('[data-test-id="canvas"]')
         || document.querySelector('.workflow-canvas')
@@ -77,26 +609,22 @@
         });
         canvas.dispatchEvent(pasteEvent);
 
-        // Honest message: we copied and attempted paste, but can't verify
         showNotification(true, 'Workflow copied to clipboard and paste attempted. If nodes did not appear, press Ctrl+V on the canvas.');
         return { success: true, method: 'clipboard+paste', verified: false };
       } else {
-        // No canvas found — just clipboard
         showNotification(true, 'Workflow copied to clipboard. Open a workflow in n8n and press Ctrl+V to paste.');
         return { success: true, method: 'clipboard-only', verified: false };
       }
-
     } catch (err) {
       showNotification(false, `Injection failed: ${err.message}`);
       return { success: false, error: err.message };
     }
   }
 
-  // --- Get current workflow from n8n page ---
+  // --- Get Current Workflow ---
 
   async function getCurrentWorkflow() {
     try {
-      // Try to extract from n8n's Vue/Pinia store
       const workflowId = extractWorkflowIdFromUrl();
       return { workflowId, url: window.location.href };
     } catch (err) {
@@ -106,7 +634,6 @@
 
   function extractWorkflowIdFromUrl() {
     const url = window.location.href;
-    // n8n URL patterns: /workflow/abc123, /workflow/abc-def-123, /workflow/abc123/edit
     const match = url.match(/\/workflow\/([a-zA-Z0-9_-]+)/);
     return match ? match[1] : null;
   }
@@ -114,7 +641,6 @@
   // --- Save Detection ---
 
   document.addEventListener('click', (event) => {
-    // Look for save button clicks in n8n
     const path = event.composedPath ? event.composedPath() : [];
 
     for (const el of path) {
@@ -133,42 +659,34 @@
       ) || ariaLabel === 'save' || testId.includes('save');
 
       if (isSaveButton) {
-        // Wait briefly for n8n to process the save, then try to capture workflow data
         setTimeout(async () => {
           const workflowId = extractWorkflowIdFromUrl();
           if (workflowId) {
-            // Try to extract workflow JSON from n8n's internal store
             let workflowData = null;
             try {
-              // n8n stores workflow data in window.__n8n_store or Pinia/Vuex
-              // Try multiple approaches to extract it
               const storeData = window.__n8n_store?.workflow
                 || document.querySelector('[data-test-id="workflow-data"]')?.textContent;
               if (storeData) {
                 workflowData = typeof storeData === 'string' ? JSON.parse(storeData) : storeData;
               }
-            } catch (_) {
-              // Extraction failed — that's ok, we'll send what we have
-            }
+            } catch (_) { /* ignore */ }
 
-            // Fetch the workflow via the API as a fallback (background.js will handle the API call)
             chrome.runtime.sendMessage({
               action: 'workflowSaved',
               workflowId,
-              workflow: workflowData, // May still be null, but now we try
-              fetchFromApi: !workflowData, // Signal background.js to fetch from n8n API
+              workflow: workflowData,
+              fetchFromApi: !workflowData,
             });
           }
         }, 1500);
         break;
       }
     }
-  }, true); // Capture phase
+  }, true);
 
   // --- Notification UI ---
 
   function showNotification(isSuccess, message) {
-    // Remove existing notification
     const existing = document.getElementById('n8n-pilot-notification');
     if (existing) existing.remove();
 
@@ -176,12 +694,12 @@
     notification.id = 'n8n-pilot-notification';
 
     const borderColor = isSuccess ? '#4caf50' : '#f44336';
-    const icon = isSuccess ? '✓' : '✗';
+    const icon = isSuccess ? '\u2713' : '\u2717';
 
     notification.style.cssText = `
       position: fixed;
       top: 20px;
-      right: 20px;
+      right: 400px;
       z-index: 999999;
       background: #1a1a1a;
       border: 1px solid #333;
@@ -204,11 +722,10 @@
 
     notification.innerHTML = `
       <span style="font-size: 18px; color: ${borderColor};">${icon}</span>
-      <span style="flex: 1;">${escapeHtml(message)}</span>
-      <span style="cursor: pointer; opacity: 0.5; font-size: 16px;" id="n8n-pilot-notif-close">×</span>
+      <span style="flex: 1;">${_escapeHtml(message)}</span>
+      <span style="cursor: pointer; opacity: 0.5; font-size: 16px;" id="n8n-pilot-notif-close">\u00d7</span>
     `;
 
-    // Add animation keyframes
     if (!document.getElementById('n8n-pilot-styles')) {
       const style = document.createElement('style');
       style.id = 'n8n-pilot-styles';
@@ -223,12 +740,10 @@
 
     document.body.appendChild(notification);
 
-    // Close button
     document.getElementById('n8n-pilot-notif-close')?.addEventListener('click', () => {
       notification.remove();
     });
 
-    // Auto-dismiss
     setTimeout(() => {
       if (notification.parentNode) {
         notification.style.transition = 'opacity 0.3s, transform 0.3s';
@@ -239,9 +754,12 @@
     }, 6000);
   }
 
-  function escapeHtml(str) {
+  function _escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
   }
+
+  // --- Auto-create panel on load ---
+  createPanel();
 })();

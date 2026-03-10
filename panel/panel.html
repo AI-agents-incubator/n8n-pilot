@@ -1,0 +1,192 @@
+<!-- n8n Pilot Side Panel — injected into n8n editor via Shadow DOM -->
+<div class="panel-container" id="panelContainer">
+  <!-- Header -->
+  <div class="panel-header">
+    <div class="panel-title-area">
+      <span class="panel-logo">⚡</span>
+      <span class="panel-title">n8n Pilot</span>
+    </div>
+    <div class="header-actions">
+      <button id="btnViewWorkflows" class="header-btn" title="Workflows" data-view="workflowsView">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+      <button id="btnViewExecutions" class="header-btn" title="Executions" data-view="executionsView">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v12M4 6l4-4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button id="btnViewHistory" class="header-btn" title="History" data-view="historyView">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v3l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+      <button id="btnViewSettings" class="header-btn" title="Settings" data-view="settingsView">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+      <button id="btnCollapsePanel" class="header-btn" title="Collapse panel">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 4l-4 4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Context Badge -->
+  <div class="context-badge" id="contextBadge">
+    <span class="context-label">Context:</span>
+    <span id="contextName" class="context-name">No workflow</span>
+  </div>
+
+  <!-- Main Content Area -->
+  <div class="panel-content">
+    <!-- Chat View (primary, always visible unless drawer is open) -->
+    <div id="chatView" class="view-container active">
+      <div id="chatMessages" class="chat-messages">
+        <div class="chat-welcome">
+          <div class="welcome-icon">⚡</div>
+          <div class="welcome-title">n8n Pilot</div>
+          <div class="welcome-text">Describe a workflow and I'll generate it for you. Or ask me to modify, explain, or test an existing workflow.</div>
+        </div>
+      </div>
+      <div class="chat-input-area">
+        <div class="chat-input-wrapper">
+          <textarea id="chatInput" class="chat-input" placeholder="Describe your workflow..." rows="1"></textarea>
+          <button id="btnSend" class="btn-send" title="Send message">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M14 2L2 8l4 2 2 4 6-12z" fill="currentColor"/></svg>
+          </button>
+        </div>
+        <div class="chat-input-meta">
+          <span id="modelIndicator" class="model-indicator">claude-sonnet</span>
+          <button id="btnAbortGeneration" class="btn-abort hidden">Stop</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Workflows Drawer -->
+    <div id="workflowsView" class="view-container drawer hidden">
+      <div class="drawer-header">
+        <h3>Workflows</h3>
+        <button class="btn-close-drawer" data-close="workflowsView">&times;</button>
+      </div>
+      <div class="drawer-content">
+        <div class="search-bar">
+          <input type="text" id="workflowSearch" class="search-input" placeholder="Search workflows...">
+          <select id="workflowFilter" class="filter-select">
+            <option value="all">All</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+        <div id="workflowsList" class="list-container">
+          <div class="list-empty">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Executions Drawer -->
+    <div id="executionsView" class="view-container drawer hidden">
+      <div class="drawer-header">
+        <h3>Executions</h3>
+        <button class="btn-close-drawer" data-close="executionsView">&times;</button>
+      </div>
+      <div class="drawer-content">
+        <div class="search-bar">
+          <select id="executionStatusFilter" class="filter-select">
+            <option value="all">All statuses</option>
+            <option value="success">Success</option>
+            <option value="error">Error</option>
+            <option value="waiting">Waiting</option>
+          </select>
+        </div>
+        <div id="executionsList" class="list-container">
+          <div class="list-empty">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- History Drawer -->
+    <div id="historyView" class="view-container drawer hidden">
+      <div class="drawer-header">
+        <h3>Generation History</h3>
+        <button class="btn-close-drawer" data-close="historyView">&times;</button>
+      </div>
+      <div class="drawer-content">
+        <div class="search-bar">
+          <input type="text" id="historySearch" class="search-input" placeholder="Search history...">
+        </div>
+        <div id="historyList" class="list-container">
+          <div class="list-empty">No history yet</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Drawer -->
+    <div id="settingsView" class="view-container drawer hidden">
+      <div class="drawer-header">
+        <h3>Settings</h3>
+        <button class="btn-close-drawer" data-close="settingsView">&times;</button>
+      </div>
+      <div class="drawer-content">
+        <!-- n8n Connection -->
+        <div class="settings-section">
+          <h4>n8n Instance</h4>
+          <div class="form-group">
+            <label for="settingsN8nUrl">URL</label>
+            <input type="url" id="settingsN8nUrl" class="form-input" placeholder="https://your-n8n.example.com">
+          </div>
+          <div class="form-group">
+            <label for="settingsN8nApiKey">API Key</label>
+            <input type="password" id="settingsN8nApiKey" class="form-input" placeholder="Enter n8n API key">
+          </div>
+          <button id="btnTestN8n" class="btn btn-secondary btn-sm">Test Connection</button>
+          <div id="n8nTestResult" class="test-result hidden"></div>
+        </div>
+
+        <!-- Claude API -->
+        <div class="settings-section">
+          <h4>Claude API</h4>
+          <div class="form-group">
+            <label for="settingsClaudeApiKey">API Key</label>
+            <input type="password" id="settingsClaudeApiKey" class="form-input" placeholder="Enter Claude API key">
+          </div>
+          <div class="form-group">
+            <label for="settingsClaudeModel">Model</label>
+            <select id="settingsClaudeModel" class="form-input">
+              <option value="claude-sonnet-4-5-20250929">Claude Sonnet 4.5</option>
+              <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+              <option value="claude-opus-4-6">Claude Opus 4.6</option>
+            </select>
+          </div>
+          <button id="btnTestClaude" class="btn btn-secondary btn-sm">Test Connection</button>
+          <div id="claudeTestResult" class="test-result hidden"></div>
+        </div>
+
+        <!-- Preferences -->
+        <div class="settings-section">
+          <h4>Preferences</h4>
+          <div class="form-group form-checkbox">
+            <input type="checkbox" id="settingsAutoInject" checked>
+            <label for="settingsAutoInject">Auto-inject generated workflow</label>
+          </div>
+          <div class="form-group form-checkbox">
+            <input type="checkbox" id="settingsSaveHistory" checked>
+            <label for="settingsSaveHistory">Save generation history</label>
+          </div>
+          <div class="form-group form-checkbox">
+            <input type="checkbox" id="settingsNotifications" checked>
+            <label for="settingsNotifications">Show notifications</label>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="settings-actions">
+          <button id="btnSaveSettings" class="btn btn-primary">Save Settings</button>
+          <button id="btnResetSettings" class="btn btn-danger btn-sm">Reset All Data</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status Bar -->
+  <div class="panel-status-bar">
+    <div class="status-indicator">
+      <span id="statusDot" class="status-dot"></span>
+      <span id="statusText" class="status-text">Not configured</span>
+    </div>
+    <span id="tokenCount" class="token-count"></span>
+  </div>
+</div>
