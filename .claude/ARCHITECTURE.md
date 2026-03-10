@@ -87,7 +87,7 @@ User enters API key → popup.js
 
 | Type | Tool | Count |
 |------|------|-------|
-| Unit tests | Vitest | ~284 tests, 11 files |
+| Unit tests | Vitest | ~284 tests + 17 regression, 12 files |
 | E2E tests | Playwright | Mock Claude + n8n servers |
 | Coverage | Vitest coverage | `npm run test:coverage` |
 
@@ -114,7 +114,8 @@ n8n-pilot/
 │   └── utils.js
 ├── icons/                 # Extension icons (16, 32, 48, 128px)
 ├── tests/                 # Test suite
-│   ├── *.test.js          # Vitest unit tests
+│   ├── unit/              # Vitest unit tests
+│   │   └── kodex-regression.test.js  # 17 regression tests
 │   └── e2e/               # Playwright E2E tests
 ├── security/              # Framework security tools
 ├── src/framework-core/    # Framework CLI (migration)

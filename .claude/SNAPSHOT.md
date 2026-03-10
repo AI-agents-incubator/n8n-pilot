@@ -1,6 +1,6 @@
 # SNAPSHOT — n8n Pilot
 
-**Version:** 1.0.0 | **Phase:** Initial Release | **Progress:** 85%
+**Version:** 1.0.0 | **Phase:** Stable | **Progress:** 95%
 
 ## Project
 Chrome Extension (Manifest V3) — AI-powered n8n workflow manager with Claude API integration.
@@ -22,13 +22,17 @@ Fully local, no external servers, privacy-first.
 - ✅ Workflow injection into n8n editor
 - ✅ Workflows/Executions tabs functional
 - ✅ History tracking + versioning
-- ⚠️ Known issue: Claude API returns 400 (credit balance) — see diagnostic report
+- ✅ Claude API integration working (API key issue resolved)
 
 ## Recent Work
-- Initial v1.0.0 release (single commit)
-- Comprehensive test suite: 284 unit tests + E2E
-- Diagnostic tool created: diagnostic.html + n8n-pilot-api-diagnostic-report.md
-- Security: AES-256-GCM, CSP, optional permissions
+- Initial v1.0.0 release
+- 7 cross-module bugs fixed (Kodex review): validation, async injection, versioning, model passthrough, settings consistency, CSS classes
+- 17 regression tests added (kodex-regression.test.js)
+- 284 unit tests passing + E2E suite
+- Diagnostic tool: diagnostic.html (API troubleshooting, kept as dev-tool)
+- API key workspace billing issue resolved
+- README.md with full setup/usage guide
+- PLAN-workflow-testing.md: next feature spec (Generate → Deploy → Test → Report)
 
 ## Tech Stack
 Vanilla JS (ES modules) | Chrome Extension MV3 | Anthropic API | n8n REST API | Vitest | Playwright

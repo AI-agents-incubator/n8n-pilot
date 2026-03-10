@@ -3,12 +3,13 @@
 *Source: SPEC.md + product vision*
 
 ## v1.1 — Stability & Polish
-- Fix Claude API workspace/billing issue
+- ~~Fix Claude API workspace/billing issue~~ ✅ resolved
 - ESLint configuration
 - CI/CD pipeline (GitHub Actions)
 - Automated extension packaging
 - Improved error messages for API failures
 - Better n8n version compatibility (content script selectors)
+- Workflow auto-testing: Generate → Deploy → Test → Report (see PLAN-workflow-testing.md)
 
 ## v1.2 — Enhanced AI
 - Multi-turn conversation for workflow refinement
