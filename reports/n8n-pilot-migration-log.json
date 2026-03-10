@@ -1,0 +1,10 @@
+{
+  "status": "in_progress",
+  "mode": "legacy",
+  "started": "2026-03-10T12:07:58-07:00",
+  "updated": "2026-03-10T12:07:58-07:00",
+  "current_step": 1,
+  "current_step_name": "discovery",
+  "steps_completed": [],
+  "last_error": null
+}
