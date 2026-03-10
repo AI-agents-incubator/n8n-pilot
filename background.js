@@ -7,6 +7,7 @@ import * as settings from './lib/settings.js';
 import * as claudeClient from './lib/claude-client.js';
 import * as n8nClient from './lib/n8n-client.js';
 import * as generator from './lib/workflow-generator.js';
+import * as promptAnalyzer from './lib/prompt-analyzer.js';
 import * as history from './lib/history.js';
 import * as versions from './lib/versions.js';
 
@@ -361,6 +362,36 @@ async function handleMessage(msg, sender) {
     case 'markHistoryInjected':
       await history.markInjected(msg.id, msg.n8nWorkflowId);
       return { success: true };
+
+    // === Prompt Analysis ===
+    case 'analyzePrompt':
+      return promptAnalyzer.analyze(msg.prompt);
+
+    case 'generateFromBlueprint': {
+      generationController = new AbortController();
+      const blueprintResult = await generator.generateFromBlueprint({
+        blueprint: msg.blueprint,
+        prompt: msg.prompt,
+        model: msg.model,
+        abortSignal: generationController.signal,
+      });
+      generationController = null;
+
+      if (blueprintResult.success) {
+        const currentSettings = await settings.getAll();
+        if (currentSettings.saveHistory !== false) {
+          await history.add({
+            prompt: blueprintResult.prompt,
+            workflow: blueprintResult.workflow,
+            model: blueprintResult.model,
+            tokensUsed: blueprintResult.tokensUsed,
+            duration: blueprintResult.duration,
+          });
+        }
+      }
+
+      return blueprintResult;
+    }
 
     // === Versions ===
     case 'saveVersion':
