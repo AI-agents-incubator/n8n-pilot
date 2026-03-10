@@ -1,9 +1,92 @@
 # n8n Pilot — Техническое задание и спецификация
 
-**Версия:** 1.0
+**Версия:** 2.0
 **Дата:** 2026-03-10
 **Автор:** Alex Krol + Claude
-**Статус:** Draft
+**Статус:** Active — synced with code as of v1.0.0
+
+---
+
+## 0. Agent Operating Contract
+
+> Этот раздел определяет исполнимые правила для AI-агента, работающего автономно.
+
+### 0.1 Pipeline
+
+Каждая задача обязана проходить полный pipeline:
+
+```
+READ → PLAN → IMPLEMENT → TEST → VERIFY → REPORT
+```
+
+| Шаг | Описание | Gate (условие перехода) |
+|-----|----------|------------------------|
+| READ | Прочитать связанные исходные файлы, SPEC.md, PLAN | Понимание контекста подтверждено |
+| PLAN | Определить файлы, точки вставки, edge cases | Список файлов и изменений записан |
+| IMPLEMENT | Написать код, следуя паттернам кодовой базы | Код компилируется / нет синтаксических ошибок |
+| TEST | Запустить `npm test`, все тесты пройдены | Exit code 0, 0 failing tests |
+| VERIFY | Проверить новый код: DOM IDs consistent, no regressions | Ручная перепроверка edge cases |
+| REPORT | Обновить SPEC/PLAN если изменились контракты, отчитаться | Файлы синхронизированы |
+
+### 0.2 Stop Conditions — когда агент ОБЯЗАН остановиться и спросить
+
+- Тесты падают и причина не ясна после 2 попыток фикса
+- Изменение требует нового Chrome permission
+- Изменение ломает существующий публичный API-контракт (message actions в background.js)
+- Нужно решение по UX/UI дизайну (расположение элементов, цвета)
+- Обнаружена уязвимость безопасности
+- Необходимо изменение, затрагивающее >5 файлов и не описанное в PLAN
+
+### 0.3 Допустимые команды
+
+```bash
+npm test                  # Unit тесты (Vitest)
+npm run test:e2e          # E2E тесты (Playwright + mock servers)
+npm run build             # Build (если добавлен)
+node scripts/bump-version.js {patch|minor|major}  # Версионирование
+git status / git diff     # Проверка состояния
+```
+
+Агент НЕ запускает:
+- `npm install` без явного разрешения
+- Деструктивные git-операции (`reset --hard`, `push --force`)
+- Скрипты, не описанные в package.json
+
+### 0.4 Definition of Done (для любой задачи)
+
+- [ ] Код написан и следует существующим паттернам (CSS variables, `msg()` helper, `$()` selector)
+- [ ] `npm test` проходит без ошибок
+- [ ] Новые DOM элементы имеют уникальные ID (проверены в `integration-ids.test.js`)
+- [ ] Нет hardcoded цветов/размеров — используются CSS custom properties
+- [ ] Edge cases из таблицы обработаны
+- [ ] SPEC.md синхронизирован с кодом (если изменились контракты)
+- [ ] PLAN-workflow-testing.md обновлён (если затронута функция тестирования)
+
+### 0.5 Failure Escalation
+
+| Ситуация | Действие |
+|----------|----------|
+| Тесты падают, фикс найден | Исправить, повторить pipeline |
+| Тесты падают, причина неясна | STOP — спросить пользователя |
+| Конфликт spec vs code | Код authoritative (см. раздел 15) |
+| Требуется новая npm-зависимость | STOP — спросить пользователя |
+| Lint/format ошибки | Исправить автоматически |
+| Security concern | STOP — сообщить пользователю |
+
+### 0.6 Non-goals
+
+- Не тестируем в реальном n8n без явного разрешения
+- Не создаём/модифицируем production credentials
+- Не отправляем реальные HTTP-запросы к внешним API в тестах
+- Не пишем код для неподдерживаемых браузеров (только Chrome 116+)
+
+### 0.7 Assumptions
+
+- n8n instance доступен по URL из settings (self-hosted)
+- Claude API key валиден и имеет достаточный баланс
+- Chrome Extension работает в Manifest V3 режиме
+- Все API-ключи хранятся зашифрованными в chrome.storage.local
+- Mock сервер на порту 5678 для E2E тестов
 
 ---
 
@@ -122,7 +205,9 @@
   "permissions": [
     "storage",
     "clipboardWrite",
-    "notifications"
+    "notifications",
+    "scripting",
+    "activeTab"
   ],
 
   "host_permissions": [
@@ -131,6 +216,7 @@
 
   "optional_host_permissions": [
     "http://localhost:*/*",
+    "http://127.0.0.1:*/*",
     "https://*/*"
   ],
 
@@ -149,10 +235,8 @@
     }
   },
 
-  "content_scripts": [],
-
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'"
+    "extension_pages": "script-src 'self'; object-src 'none'"
   },
 
   "icons": {
@@ -171,16 +255,18 @@
 | `storage` | Хранение настроек, истории, ключей | Нет — необходим |
 | `clipboardWrite` | Копирование JSON в буфер | Можно убрать, но неудобно |
 | `notifications` | Уведомления о генерации | Можно использовать in-page |
+| `scripting` | Программная инъекция content.js на n8n-таб | Нет — необходим для `chrome.scripting.executeScript` |
+| `activeTab` | Доступ к активному табу для инъекции | Нет — необходим |
 | `host_permissions: api.anthropic.com` | Прямые вызовы Claude API | Нет — необходим |
 | `optional: localhost:*` | Подключение к self-hosted n8n | Запрашивается при настройке |
+| `optional: 127.0.0.1:*` | Альтернативный localhost | Запрашивается при настройке |
 | `optional: https://*/*` | n8n на кастомном домене | Запрашивается при настройке |
 
 ### 3.3 Что НЕ запрашиваем (в отличие от оригиналов)
 
 - `<all_urls>` — НЕТ. Content script инъектируется программно только на n8n
-- `scripting` — НЕТ в обязательных. Используем `chrome.scripting.executeScript` только после получения optional permission
-- `activeTab` — НЕТ. Работаем только с конкретным n8n-табом
 - `tabs` — НЕТ. Не нужен доступ ко всем вкладкам
+- `content_scripts` в manifest — НЕТ. Программная инъекция через `chrome.scripting.executeScript` вместо декларативной
 
 ### 3.4 Content Script — программная инъекция
 
@@ -247,39 +333,46 @@ interface CryptoModule {
 **Назначение:** CRUD для всех настроек расширения.
 
 ```typescript
+// Actual DEFAULTS from lib/settings.js
 interface Settings {
   // n8n instance
-  n8nBaseUrl: string;         // e.g. "http://localhost:5678"
-  n8nApiKey: string;          // encrypted
-  n8nApiKeyIv: string;        // IV для расшифровки
+  n8nBaseUrl: string;            // e.g. "http://localhost:5678"
+  n8nApiKeyCipher: string;       // encrypted (AES-256-GCM ciphertext, base64)
+  n8nApiKeyIv: string;           // IV для расшифровки (base64)
 
   // Claude API
-  claudeApiKey: string;       // encrypted
-  claudeApiKeyIv: string;     // IV для расшифровки
-  claudeModel: string;        // e.g. "claude-sonnet-4-20250514"
-  claudeMaxTokens: number;    // default: 4096
-  claudeTemperature: number;  // default: 0.3
+  claudeApiKeyCipher: string;    // encrypted
+  claudeApiKeyIv: string;        // IV
+  claudeModel: string;           // default: "claude-sonnet-4-5-20250929"
+  claudeMaxTokens: number;       // default: 4096
+  claudeTemperature: number;     // default: 0.3
 
   // UI preferences
-  theme: 'dark' | 'light';    // default: 'dark'
-  language: 'en' | 'ru';      // default: 'en'
+  theme: 'dark' | 'light';      // default: 'dark'
+  language: 'en' | 'ru';        // default: 'en'
 
   // Feature flags
-  autoInject: boolean;         // auto-inject generated workflow
-  showNotifications: boolean;  // show Chrome notifications
-  historyLimit: number;        // max history items (default: 50)
-  versionLimit: number;        // max versions per workflow (default: 30)
+  autoInject: boolean;           // default: true — auto-inject generated workflow
+  saveHistory: boolean;          // default: true — save generation history
+  notifications: boolean;       // default: true — show Chrome notifications
+  historyLimit: number;          // default: 50
+  versionLimit: number;          // default: 30
 }
 
 interface SettingsModule {
-  get<K extends keyof Settings>(key: K): Promise<Settings[K]>;
-  set<K extends keyof Settings>(key: K, value: Settings[K]): Promise<void>;
-  getAll(): Promise<Settings>;
-  reset(): Promise<void>;
+  get(key: keyof Settings): Promise<any>;       // single key lookup
+  set(updates: Partial<Settings>): Promise<Settings>;  // merge updates into stored settings
+  getAll(): Promise<Settings>;                  // all settings, merged with DEFAULTS
+  reset(): Promise<Settings>;                   // restore DEFAULTS
 
-  // Специальные методы для зашифрованных полей
-  setApiKey(provider: 'claude' | 'n8n', key: string): Promise<void>;
+  // Encrypted API key management
+  setApiKey(provider: 'claude' | 'n8n', apiKey: string): Promise<void>;
   getApiKey(provider: 'claude' | 'n8n'): Promise<string>;
+  hasApiKey(provider: 'claude' | 'n8n'): Promise<boolean>;
+
+  // Backup (strips encrypted fields)
+  exportSettings(): Promise<Partial<Settings>>;
+  importSettings(data: Partial<Settings>): Promise<void>;
 }
 ```
 
@@ -293,51 +386,36 @@ interface SettingsModule {
 
 ```typescript
 interface ClaudeClient {
-  // Генерация workflow JSON
-  generateWorkflow(params: {
+  // Основной метод — отправка сообщения Claude API
+  sendMessage(params: {
+    systemPrompt: string;
     userPrompt: string;
-    model?: string;
+    model?: string;       // override claudeModel из settings
     maxTokens?: number;
     temperature?: number;
     abortSignal?: AbortSignal;
   }): Promise<ClaudeResponse>;
 
-  // Debug-запрос (полный ответ без парсинга)
-  debugRequest(params: {
-    systemPrompt: string;
-    userPrompt: string;
-    model?: string;
-  }): Promise<DebugResponse>;
+  // Проверка доступности API (минимальный запрос)
+  testConnection(apiKey: string): Promise<{ connected: boolean; error: string | null }>;
 
-  // Проверка доступности API
-  testConnection(apiKey: string): Promise<boolean>;
-
-  // Получение списка доступных моделей
-  listModels(): Promise<string[]>;
+  // Список доступных моделей (hardcoded, не API-запрос)
+  getAvailableModels(): Array<{ id: string; name: string; description: string }>;
 }
 
+// sendMessage возвращает unified response (и для generate, и для debug)
 interface ClaudeResponse {
   success: boolean;
-  workflow: object | null;   // parsed n8n workflow JSON
-  rawResponse: string;       // raw API response
+  content: string | null;    // текстовый ответ (парсинг JSON — ответственность вызывающего)
+  rawResponse: string;       // raw API response JSON
   tokensUsed: {
     input: number;
     output: number;
   };
   duration: number;          // ms
-  error?: string;
-}
-
-interface DebugResponse {
-  success: boolean;
-  rawResponse: string;
-  tokensUsed: {
-    input: number;
-    output: number;
-  };
-  duration: number;
-  model: string;
-  stopReason: string;
+  model?: string;            // actual model used
+  stopReason?: string;       // end_turn, max_tokens, etc.
+  error: string | null;
 }
 ```
 
@@ -487,14 +565,15 @@ interface WorkflowGenerator {
   // Основная генерация
   generate(params: {
     prompt: string;
+    model?: string;              // model override
     abortSignal?: AbortSignal;
-    onProgress?: (status: string) => void;
   }): Promise<GenerationResult>;
 
   // Модификация существующего workflow
   modify(params: {
     workflow: object;
     instruction: string;
+    model?: string;              // model override
     abortSignal?: AbortSignal;
   }): Promise<GenerationResult>;
 
@@ -1099,67 +1178,69 @@ const rateLimiter = {
 ```
 n8n-pilot/
 ├── manifest.json
-├── background.js              # Service worker (entry point)
-├── popup.html                 # Popup UI
-├── popup.js                   # Popup logic
-├── popup.css                  # Popup styles
+├── background.js              # Service worker (entry point, message router)
+├── popup.html                 # Popup UI (5 tabs + settings modal)
+├── popup.js                   # Popup logic (861 lines)
+├── popup.css                  # Popup styles (967 lines, dark theme)
 ├── content.js                 # Content script (n8n pages only)
+├── diagnostic.html            # API diagnostic tool (standalone)
 ├── lib/
-│   ├── crypto.js              # AES-256-GCM encryption
-│   ├── settings.js            # Settings management
-│   ├── claude-client.js       # Anthropic API client
-│   ├── n8n-client.js          # n8n REST API client
-│   ├── workflow-generator.js  # AI workflow generation + validation
-│   ├── workflow-validator.js  # JSON schema validation
-│   ├── history.js             # Generation history
+│   ├── crypto.js              # AES-256-GCM encryption (Web Crypto API)
+│   ├── settings.js            # Settings management (encrypted API keys)
+│   ├── claude-client.js       # Anthropic API client (sendMessage, testConnection)
+│   ├── n8n-client.js          # n8n REST API client (CRUD + testConnection)
+│   ├── workflow-generator.js  # AI workflow generation (generate, modify, explain)
+│   ├── workflow-validator.js  # JSON validation & normalization
+│   ├── history.js             # Generation history (chrome.storage.local)
 │   ├── versions.js            # Workflow version tracking
-│   └── utils.js               # Shared utilities
+│   └── utils.js               # Shared utilities (uuid, sleep, extractJson, etc.)
 ├── icons/
 │   ├── icon16.png
 │   ├── icon32.png
 │   ├── icon48.png
 │   └── icon128.png
+├── scripts/
+│   └── bump-version.js        # Syncs version across package.json, manifest.json, SNAPSHOT, README
 ├── tests/
 │   ├── unit/
-│   │   ├── crypto.test.js
-│   │   ├── settings.test.js
-│   │   ├── claude-client.test.js
-│   │   ├── n8n-client.test.js
-│   │   ├── workflow-generator.test.js
-│   │   ├── workflow-validator.test.js
-│   │   ├── history.test.js
-│   │   └── versions.test.js
-│   ├── integration/
-│   │   ├── background.test.js
-│   │   ├── popup.test.js
-│   │   └── content.test.js
-│   ├── e2e/
-│   │   ├── setup.js           # Playwright setup
-│   │   ├── fixtures/          # Mock data
-│   │   │   ├── workflows.json
-│   │   │   ├── executions.json
-│   │   │   └── claude-responses.json
-│   │   ├── mocks/
-│   │   │   ├── claude-server.js   # Mock Anthropic API
-│   │   │   └── n8n-server.js      # Mock n8n API
-│   │   ├── generate.e2e.js
-│   │   ├── workflows.e2e.js
-│   │   ├── executions.e2e.js
-│   │   ├── history.e2e.js
-│   │   ├── settings.e2e.js
-│   │   └── security.e2e.js
-│   └── playwright.config.js
+│   │   ├── setup.js                   # Chrome API mocks (in-memory storage)
+│   │   ├── crypto.test.js             # ✅ EXISTS — encryption tests
+│   │   ├── settings.test.js           # ✅ EXISTS — settings CRUD tests
+│   │   ├── workflow-validator.test.js  # ✅ EXISTS — validation/normalization
+│   │   ├── history.test.js            # ✅ EXISTS — history CRUD/FIFO
+│   │   ├── versions.test.js           # ✅ EXISTS — version tracking
+│   │   ├── utils.test.js              # ✅ EXISTS — utility functions
+│   │   ├── integration-ids.test.js    # ✅ EXISTS — DOM ID consistency
+│   │   └── kodex-regression.test.js   # ✅ EXISTS — regression suite (17 tests)
+│   └── e2e/
+│       ├── mocks/
+│       │   └── n8n-server.js          # ✅ EXISTS — Express mock n8n API (port 5678)
+│       └── (E2E specs planned, not yet implemented)
+├── .env.example               # Development env vars template
 ├── package.json
-└── README.md
+├── CHANGELOG.md               # Keep a Changelog format
+├── README.md
+├── SPEC.md                    # THIS FILE — technical specification
+└── PLAN-workflow-testing.md   # Workflow auto-testing spec (v3.0)
 ```
+
+> **IMPORTANT — Test file status:**
+> Files marked ✅ EXISTS are real and passing. The following test files from SPEC v1.0 do NOT exist yet:
+> `claude-client.test.js`, `n8n-client.test.js`, `workflow-generator.test.js`,
+> `background.test.js`, `popup.test.js`, `content.test.js`, and all E2E `.e2e.js` files.
+> These are planned but not yet implemented.
 
 ---
 
 ## 8. План тестирования
 
+> **Статус:** 8 файлов / ~301 тест (Vitest). Нет E2E-тестов.
+> Файлы `claude-client.test.js`, `n8n-client.test.js`, `workflow-generator.test.js` — запланированы, не реализованы.
+> Integration-тесты (8.2) и E2E-тесты (8.3) — запланированы, не реализованы.
+
 ### 8.1 Unit-тесты (Vitest)
 
-#### 8.1.1 Crypto module
+#### 8.1.1 Crypto module ✅
 ```
 ✓ generateEncryptionKey creates valid AES-256-GCM key
 ✓ encrypt/decrypt round-trip preserves original text
@@ -1172,7 +1253,7 @@ n8n-pilot/
 ✓ exportKey/importKey round-trip preserves key
 ```
 
-#### 8.1.2 Settings module
+#### 8.1.2 Settings module ✅
 ```
 ✓ get returns default value when key not set
 ✓ set persists value to chrome.storage
@@ -1184,7 +1265,7 @@ n8n-pilot/
 ✓ handles concurrent reads/writes
 ```
 
-#### 8.1.3 Claude Client
+#### 8.1.3 Claude Client ⏳ PLANNED (file does not exist)
 ```
 ✓ generateWorkflow sends correct request to Anthropic API
 ✓ generateWorkflow parses JSON from response
@@ -1201,7 +1282,7 @@ n8n-pilot/
 ✓ max 3 retries then fail
 ```
 
-#### 8.1.4 n8n Client
+#### 8.1.4 n8n Client ⏳ PLANNED (file does not exist)
 ```
 ✓ listWorkflows sends GET with correct params
 ✓ listWorkflows handles pagination
@@ -1222,7 +1303,7 @@ n8n-pilot/
 ✓ rejects non-HTTP(S) URLs
 ```
 
-#### 8.1.5 Workflow Validator
+#### 8.1.5 Workflow Validator ✅
 ```
 ✓ validates correct workflow as valid
 ✓ rejects workflow without nodes
@@ -1240,7 +1321,7 @@ n8n-pilot/
 ✓ handles malformed JSON
 ```
 
-#### 8.1.6 History module
+#### 8.1.6 History module ✅
 ```
 ✓ add creates new entry with UUID and timestamp
 ✓ list returns entries in reverse chronological order
@@ -1252,7 +1333,7 @@ n8n-pilot/
 ✓ handles concurrent add operations
 ```
 
-#### 8.1.7 Versions module
+#### 8.1.7 Versions module ✅
 ```
 ✓ saveVersion creates new version with incremented number
 ✓ getVersions returns all versions for workflow
@@ -1265,7 +1346,7 @@ n8n-pilot/
 ✓ FIFO: oldest version removed when limit reached
 ```
 
-### 8.2 Integration-тесты
+### 8.2 Integration-тесты ⏳ PLANNED
 
 ```
 ✓ Background processes generate message correctly
@@ -1277,7 +1358,10 @@ n8n-pilot/
 ✓ Popup receives state updates from background
 ```
 
-### 8.3 E2E-тесты (Playwright)
+> **Note:** integration-ids.test.js и kodex-regression.test.js существуют и проверяют
+> часть integration-сценариев (DOM consistency, regression pack).
+
+### 8.3 E2E-тесты (Playwright) ⏳ PLANNED
 
 #### 8.3.1 Playwright Setup
 
@@ -1503,6 +1587,168 @@ app.post('/api/v1/workflows', (req, res) => { ... });
 | 12 | Security audit + polish | Review all code | 1 час |
 
 **Итого:** ~24 часа разработки
+
+---
+
+## 13. Environment Matrix
+
+| Параметр | Значение | Примечание |
+|----------|----------|------------|
+| Node.js | 18+ | Для запуска тестов и скриптов |
+| Chrome | 116+ | `minimum_chrome_version` в manifest.json |
+| n8n | 1.0+ (self-hosted) | Публичный REST API v1 |
+| Vitest | ^2.0.0 | Unit test framework |
+| Playwright | ^1.45.0 | E2E test framework |
+| Express | ^4.19.0 | Mock servers для E2E |
+| Mock n8n port | 5678 | `tests/e2e/mocks/n8n-server.js` |
+| Mock Claude port | 3100 | Planned, not yet implemented |
+| Extension popup | 420x520px | Fixed dimensions |
+| Build mode | None | Нет bundler — нативные ES modules |
+| Manifest | V3 | Service Worker, не background page |
+
+**Self-host assumptions:**
+- n8n доступен по HTTP/HTTPS URL, указанному пользователем
+- n8n API key создан через Settings → API → Generate key
+- Webhook URLs работают без дополнительной авторизации
+- `GET /api/v1/credentials` возвращает список без секретов (только id, name, type)
+
+---
+
+## 14. Acceptance Criteria by Feature
+
+### 14.1 Crypto (lib/crypto.js)
+
+| Критерий | Must | Test |
+|----------|------|------|
+| AES-256-GCM encryption round-trip | ✅ | crypto.test.js ✅ |
+| Разный ciphertext для одного plaintext (random IV) | ✅ | crypto.test.js ✅ |
+| Ошибка при неверном ключе/IV | ✅ | crypto.test.js ✅ |
+| Unicode и пустые строки | ✅ | crypto.test.js ✅ |
+
+### 14.2 Settings (lib/settings.js)
+
+| Критерий | Must | Test |
+|----------|------|------|
+| Defaults merge с сохранёнными значениями | ✅ | settings.test.js ✅ |
+| set(updates) — partial update | ✅ | settings.test.js ✅ |
+| Encrypted API key storage/retrieval | ✅ | settings.test.js ✅ |
+| hasApiKey() без дешифрования | ✅ | settings.test.js ✅ |
+| export/import без encrypted fields | ✅ | settings.test.js ✅ |
+
+### 14.3 Claude Client (lib/claude-client.js)
+
+| Критерий | Must | Test |
+|----------|------|------|
+| sendMessage() отправляет корректный request | ✅ | ⏳ claude-client.test.js |
+| Retry на 429/529/5xx с exponential backoff | ✅ | ⏳ |
+| Не retry на 400/401 | ✅ | ⏳ |
+| AbortSignal cancellation | ✅ | ⏳ |
+| testConnection() minimal request | ✅ | ⏳ |
+| 3-minute generation timeout | ✅ | ⏳ |
+
+### 14.4 n8n Client (lib/n8n-client.js)
+
+| Критерий | Must | Test |
+|----------|------|------|
+| All CRUD operations (workflows, executions, variables, tags) | ✅ | ⏳ n8n-client.test.js |
+| X-N8N-API-KEY header | ✅ | ⏳ |
+| 15s request timeout | ✅ | ⏳ |
+| testConnection() health check | ✅ | ⏳ |
+| Error handling (401, 404, timeout) | ✅ | ⏳ |
+
+### 14.5 Workflow Generator (lib/workflow-generator.js)
+
+| Критерий | Must | Test |
+|----------|------|------|
+| generate() → valid workflow JSON | ✅ | ⏳ workflow-generator.test.js |
+| modify() → modified workflow | ✅ | ⏳ |
+| explain() → текстовое описание | ✅ | ⏳ |
+| model override parameter | ✅ | ⏳ |
+| JSON extraction из markdown-wrapped ответа | ✅ | ⏳ |
+
+### 14.6 Workflow Validator (lib/workflow-validator.js)
+
+| Критерий | Must | Test |
+|----------|------|------|
+| validate() errors для missing nodes/connections | ✅ | workflow-validator.test.js ✅ |
+| normalize() fixes numeric objects, positions, IDs | ✅ | workflow-validator.test.js ✅ |
+| Warning для отсутствующего trigger | ✅ | workflow-validator.test.js ✅ |
+
+### 14.7 Workflow Testing (PLAN-workflow-testing.md — будущая функция)
+
+| Критерий | Must | Test |
+|----------|------|------|
+| Webhook injection в workflow без триггера | ✅ | ⏳ n8n-client-execute.test.js |
+| Webhook injection — замена scheduleTrigger | ✅ | ⏳ |
+| Reuse existing webhook | ✅ | ⏳ |
+| Credential matching (auto, conflict, missing) | ✅ | ⏳ |
+| Full test cycle: deploy → activate → webhook → poll → cleanup | ✅ | ⏳ |
+| Execution timeout handling | ✅ | ⏳ |
+| Cleanup даже при ошибке (finally) | ✅ | ⏳ |
+
+### 14.8 Negative cases (обязательные для каждого модуля)
+
+Каждый модуль ОБЯЗАН иметь тесты на:
+- Invalid/missing input parameters
+- Network errors (timeout, connection refused)
+- Unexpected API responses (malformed JSON, empty body)
+- Storage full/unavailable
+- Concurrent access conflicts
+
+---
+
+## 15. Spec vs Code Sync Rules
+
+### 15.1 Что authoritative
+
+| Ситуация | Source of truth | Действие |
+|----------|----------------|----------|
+| Spec описывает контракт, код ещё не реализован | Spec | Реализовать по spec |
+| Код реализован, spec устарел | Код | Обновить spec под код |
+| Spec и код конфликтуют | Код (если работает и тесты проходят) | Обновить spec |
+| Новая функция не описана ни в spec ни в PLAN | STOP | Сначала обновить PLAN/spec, потом реализовать |
+
+### 15.2 Когда агент обязан обновить spec
+
+- Добавлен новый message action в background.js → обновить Section 4.9
+- Изменена сигнатура экспортируемой функции → обновить соответствующий Section 4.x
+- Добавлен новый файл → обновить Section 7 (файловая структура)
+- Добавлен новый тестовый файл → обновить Section 8 (план тестирования)
+- Изменены Chrome permissions → обновить Section 3
+
+### 15.3 Когда агент обязан обновить PLAN
+
+- Изменён алгоритм тестирования workflow
+- Добавлен/удалён edge case
+- Изменена стратегия credential matching
+- Добавлена новая фаза реализации
+
+### 15.4 Version bump rules
+
+- Фикс расхождений spec↔code: minor version spec (1.0 → 1.1)
+- Новая функция: major version spec (1.0 → 2.0)
+- Текущая версия: **SPEC v2.0** (synced with code v1.0.0)
+
+---
+
+## 16. Workflow Testing — Overview
+
+> Полная техническая спецификация: **[PLAN-workflow-testing.md](./PLAN-workflow-testing.md)** (v3.0)
+
+### 16.1 Что это
+
+Автоматическое тестирование сгенерированных workflow: Generate → Deploy → Test → Report.
+
+### 16.2 Почему отдельный документ
+
+PLAN содержит ~500 строк детального implementation guide с кодом, точками вставки и тест-планом. Включение в SPEC увеличило бы документ вдвое. PLAN — исполнимый контракт для реализации, SPEC — описание контрактов модулей.
+
+### 16.3 Ключевые решения (зафиксированы в PLAN)
+
+- **Webhook Injection** вместо несуществующего execute endpoint
+- **Динамический credential matching** из `node.credentials` JSON (не hardcoded map)
+- **chrome.storage.local** для test results (не database)
+- **4 фазы** реализации (MVP → Credentials → Error Analysis → Advanced)
 
 ---
 

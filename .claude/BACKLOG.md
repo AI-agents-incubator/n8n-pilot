@@ -11,7 +11,7 @@
 ## 🔧 Improvements
 - [ ] Configure ESLint/linter (`"lint": "echo 'No linter configured'"` in package.json)
 - [ ] Add inline JSDoc comments to lib modules
-- [x] ~~Fix .gitignore~~ — done (.env, credentials, *.pem, *.key, security/reports/)
+
 
 ## 🧪 Testing
 - [ ] Run full test suite and verify all 284 tests pass
