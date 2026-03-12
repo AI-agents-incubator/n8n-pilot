@@ -48,6 +48,32 @@ function initChat($, _msg, options = {}) {
     });
   }
 
+  // Copy Dialog button
+  const copyDialogBtn = $('btnCopyDialog');
+  if (copyDialogBtn) {
+    copyDialogBtn.addEventListener('click', async () => {
+      const bubbles = chatMessages.querySelectorAll('.chat-bubble');
+      if (!bubbles.length) return;
+      let dialogText = '';
+      bubbles.forEach(b => {
+        const role = b.classList.contains('user') ? 'User' : 'Assistant';
+        dialogText += `${role}:\n${b.textContent.trim()}\n\n`;
+      });
+      try {
+        await navigator.clipboard.writeText(dialogText.trim());
+        copyDialogBtn.classList.add('copied');
+        copyDialogBtn.title = 'Copied!';
+        setTimeout(() => {
+          copyDialogBtn.classList.remove('copied');
+          copyDialogBtn.title = 'Copy conversation';
+        }, 2000);
+      } catch (_) {
+        copyDialogBtn.title = 'Failed to copy';
+        setTimeout(() => { copyDialogBtn.title = 'Copy conversation'; }, 2000);
+      }
+    });
+  }
+
   // --- Send Message ---
 
   async function sendMessage() {
@@ -153,7 +179,17 @@ function initChat($, _msg, options = {}) {
     options.stopKeepAlive?.();
 
     if (errorMsg && currentAssistantBubble) {
-      currentAssistantBubble.innerHTML = `<span class="error-text">${_escapeHtml(errorMsg)}</span>`;
+      if (errorMsg.includes('API key not configured') || errorMsg.includes('401')) {
+        currentAssistantBubble.innerHTML = `
+          <div class="error-action-card">
+            <div class="error-action-text">${_escapeHtml(errorMsg)}</div>
+            <button class="btn btn-primary btn-sm btn-open-settings">Open Settings</button>
+          </div>`;
+        currentAssistantBubble.querySelector('.btn-open-settings')
+          ?.addEventListener('click', () => $('btnViewSettings')?.click());
+      } else {
+        currentAssistantBubble.innerHTML = `<span class="error-text">${_escapeHtml(errorMsg)}</span>`;
+      }
       currentAssistantBubble = null;
       return;
     }

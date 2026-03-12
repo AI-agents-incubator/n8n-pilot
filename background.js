@@ -240,6 +240,17 @@ async function handleMessage(msg, sender) {
 
       const streamSettings = await settings.getAll();
 
+      // Load conversation history for multi-turn context
+      const MAX_HISTORY = 20;
+      const chatMemKey = 'n8nPilotChatMemory';
+      const chatMem = (await chrome.storage.local.get(chatMemKey))[chatMemKey] || {};
+      const ctxId = msg.workflowId || 'default';
+      const stored = chatMem[ctxId]?.messages || [];
+      const conversationMessages = stored.slice(-MAX_HISTORY)
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => ({ role: m.role, content: m.content }));
+      conversationMessages.push({ role: 'user', content: msg.prompt });
+
       // Smart pipeline: analyze prompt → find templates → build enhanced prompt
       const streamBlueprint = promptAnalyzer.analyze(msg.prompt);
       const streamTemplates = await templateSearch.findTemplates(streamBlueprint, {
@@ -247,13 +258,21 @@ async function handleMessage(msg, sender) {
         limit: 3,
       }).catch(() => []);
 
+      // Notify UI about template search results
+      if (activeStreamTabId) {
+        chrome.tabs.sendMessage(activeStreamTabId, {
+          type: 'TEMPLATE_SEARCH_RESULT',
+          count: streamTemplates.length,
+        }).catch(() => {});
+      }
+
       const streamSystemPrompt = generator.buildStreamingPrompt(
         streamBlueprint, streamTemplates, promptAnalyzer.buildEnhancedPrompt
       );
 
       await claudeClient.sendMessageStream({
         systemPrompt: streamSystemPrompt,
-        userPrompt: msg.prompt,
+        messages: conversationMessages,
         model: msg.model || streamSettings.claudeModel,
         abortSignal: generationController.signal,
         onChunk: (text, totalLength) => {

@@ -416,6 +416,18 @@
   padding: var(--spacing-xs) var(--spacing-sm);
 }
 
+.workflow-delta {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+}
+.workflow-delta.positive { color: var(--color-success); }
+.workflow-delta.negative { color: var(--color-error); }
+.workflow-delta-info {
+  font-size: var(--font-size-xs);
+  color: var(--color-warning);
+  font-style: italic;
+}
+
 /* ============================================================
    Chat Input Area
    ============================================================ */
@@ -506,6 +518,20 @@
 .btn-abort:hover {
   opacity: 0.8;
 }
+
+.btn-icon-sm {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  transition: color var(--transition-fast);
+}
+.btn-icon-sm:hover { color: var(--color-accent); }
+.btn-icon-sm.copied { color: var(--color-success); }
 
 /* ============================================================
    Status Bar
@@ -617,6 +643,33 @@
 .error-text {
   color: var(--color-error);
   font-style: italic;
+}
+
+.error-action-card {
+  background: rgba(255, 92, 92, 0.08);
+  border: 1px solid rgba(255, 92, 92, 0.25);
+  border-radius: 8px;
+  padding: var(--spacing-md);
+  text-align: center;
+}
+.error-action-text {
+  color: var(--color-error);
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.badge-info {
+  background: rgba(91, 168, 255, 0.15);
+  color: var(--color-info);
+}
+.badge-muted {
+  background: rgba(160, 160, 160, 0.1);
+  color: var(--color-text-muted);
+}
+.chat-info-badge {
+  text-align: center;
+  padding: var(--spacing-xs) 0;
+  font-size: var(--font-size-xs);
 }
 
 /* ============================================================

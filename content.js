@@ -207,6 +207,7 @@
     let isStreaming = false;
     let currentAssistantBubble = null;
     let streamFullText = '';
+    let lastWorkflowMeta = null;
 
     if (!chatMessages || !chatInput || !sendBtn) return null;
 
@@ -229,6 +230,32 @@
       abortBtn.addEventListener('click', () => {
         msgFn('cancelGeneration').catch(() => {});
         finishStreaming('Generation cancelled.');
+      });
+    }
+
+    // Copy Dialog button
+    const copyDialogBtn = $('btnCopyDialog');
+    if (copyDialogBtn) {
+      copyDialogBtn.addEventListener('click', async () => {
+        const bubbles = chatMessages.querySelectorAll('.chat-bubble');
+        if (!bubbles.length) return;
+        let dialogText = '';
+        bubbles.forEach(b => {
+          const role = b.classList.contains('user') ? 'User' : 'Assistant';
+          dialogText += `${role}:\n${b.textContent.trim()}\n\n`;
+        });
+        try {
+          await navigator.clipboard.writeText(dialogText.trim());
+          copyDialogBtn.classList.add('copied');
+          copyDialogBtn.title = 'Copied!';
+          setTimeout(() => {
+            copyDialogBtn.classList.remove('copied');
+            copyDialogBtn.title = 'Copy conversation';
+          }, 2000);
+        } catch (_) {
+          copyDialogBtn.title = 'Failed to copy';
+          setTimeout(() => { copyDialogBtn.title = 'Copy conversation'; }, 2000);
+        }
       });
     }
 
@@ -309,7 +336,17 @@
       options.stopKeepAlive?.();
 
       if (errorMsg && currentAssistantBubble) {
-        currentAssistantBubble.innerHTML = `<span class="error-text">${_chatEscapeHtml(errorMsg)}</span>`;
+        if (errorMsg.includes('API key not configured') || errorMsg.includes('401')) {
+          currentAssistantBubble.innerHTML = `
+            <div class="error-action-card">
+              <div class="error-action-text">${_chatEscapeHtml(errorMsg)}</div>
+              <button class="btn btn-primary btn-sm btn-open-settings">Open Settings</button>
+            </div>`;
+          currentAssistantBubble.querySelector('.btn-open-settings')
+            ?.addEventListener('click', () => $('btnViewSettings')?.click());
+        } else {
+          currentAssistantBubble.innerHTML = `<span class="error-text">${_chatEscapeHtml(errorMsg)}</span>`;
+        }
         currentAssistantBubble = null;
         return;
       }
@@ -374,6 +411,21 @@
       const nodeCount = workflow.nodes?.length || 0;
       const connectionCount = workflow.connections ? Object.keys(workflow.connections).length : 0;
       const name = workflow.name || 'Generated Workflow';
+      const triggerNode = workflow.nodes?.find(n =>
+        n.type?.includes('Trigger') || n.type?.includes('trigger') || n.type?.includes('webhook')
+      );
+      const triggerType = triggerNode?.type?.replace('n8n-nodes-base.', '') || '';
+
+      // Compute delta from previous workflow
+      let deltaHtml = '';
+      if (lastWorkflowMeta) {
+        const diff = nodeCount - lastWorkflowMeta.nodeCount;
+        if (diff > 0) deltaHtml = `<span class="workflow-delta positive">(+${diff})</span>`;
+        else if (diff < 0) deltaHtml = `<span class="workflow-delta negative">(${diff})</span>`;
+        if (triggerType && lastWorkflowMeta.triggerType && triggerType !== lastWorkflowMeta.triggerType) {
+          deltaHtml += ` <span class="workflow-delta-info">trigger changed</span>`;
+        }
+      }
 
       card.innerHTML = `
         <div class="workflow-card-header">
@@ -381,7 +433,7 @@
           <span class="workflow-card-title">${_chatEscapeHtml(name)}</span>
         </div>
         <div class="workflow-card-meta">
-          <span>${nodeCount} nodes</span>
+          <span>${nodeCount} nodes ${deltaHtml}</span>
           <span>${connectionCount} connections</span>
         </div>
         <div class="workflow-card-actions">
@@ -389,6 +441,8 @@
           <button class="btn btn-secondary btn-sm btn-inject-workflow">Inject</button>
         </div>
       `;
+
+      lastWorkflowMeta = { nodeCount, triggerType };
 
       const copyBtn = card.querySelector('.btn-copy-workflow');
       const injectBtn = card.querySelector('.btn-inject-workflow');
@@ -791,6 +845,11 @@
         sendResponse({ success: true });
         break;
 
+      case 'TEMPLATE_SEARCH_RESULT':
+        handleTemplateSearchResult(msg);
+        sendResponse({ success: true });
+        break;
+
       case 'CONTEXT_MENU_PROMPT':
         // Inject prompt into chat input and trigger send
         if (_shadowRoot) {
@@ -838,6 +897,19 @@
     if (_chatHandlers) {
       _chatHandlers.handleStreamError(msg.error);
     }
+  }
+
+  function handleTemplateSearchResult(msg) {
+    if (!_shadowRoot) return;
+    const chatMessages = _shadowRoot.getElementById('chatMessages');
+    if (!chatMessages) return;
+
+    const badge = document.createElement('div');
+    badge.className = 'chat-info-badge';
+    badge.innerHTML = msg.count > 0
+      ? `<span class="badge badge-info">\ud83d\udcce ${msg.count} template${msg.count > 1 ? 's' : ''} found</span>`
+      : `<span class="badge badge-muted">No matching templates</span>`;
+    chatMessages.appendChild(badge);
   }
 
   // --- Workflow Injection ---
