@@ -3,13 +3,35 @@ node_modules/
 *.log
 __pycache__/
 *.pyc
+test-results/
 
-# Framework session state (local only)
+# Internal development files (not for public repo)
+SPEC.md
+PLAN-*.md
+AGENTS.md
+reports/
+dialog/
+src/framework-core/
+
+# Claude Code Starter framework internals
 .claude/.framework-config
 .claude/.last_activity
 .claude/.last_session
 .claude/.session-owner
 .claude/logs/
+.claude/BACKLOG.md
+.claude/ROADMAP.md
+.claude/IDEAS.md
+.claude/COMMIT_POLICY.md
+.claude/commands/
+.claude/protocols/
+.claude/scripts/
+.claude/templates/
+.claude/dist/
+.claude/settings.local.json
+
+# Build artifacts
+dist/
 
 # Security: Environment variables and credentials
 .env
