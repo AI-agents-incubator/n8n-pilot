@@ -2,122 +2,132 @@
 
 ## Overview
 
-Chrome Extension (Manifest V3) with 3 main contexts + 9 library modules.
+Chrome Extension (Manifest V3) with injected side panel architecture.
+3 contexts (background, content, panel) + 15 library modules.
 Message-based architecture, fully async, no runtime dependencies.
 
 ## Components
 
 ### background.js (Service Worker)
-Central orchestrator. Routes messages between popup/content and external APIs.
+Central orchestrator. Routes 40+ message actions between content script and external APIs.
 - Handles all `chrome.runtime.sendMessage` requests
-- Makes direct HTTPS calls to Anthropic API and n8n REST API
+- Makes HTTPS calls to Anthropic API, n8n REST API, and template server
 - Manages `chrome.storage.local` for state persistence
-- Handles permission checking and optional host permissions
+- Auto-searches templates before workflow generation
 
-### popup.html + popup.js + popup.css (UI)
-Main user interface (420px popup window, dark theme).
-- **5 tabs:** Generate, Workflows, Executions, History, Settings
-- **+1 tab:** Debug (dev mode)
-- Sends messages to background.js for all data operations
-- Renders results, handles user interactions
-
-### content.js (Content Script)
-Injected only into n8n pages (not all sites).
+### content.js (Content Script + Side Panel)
+Injected into n8n pages. Creates Shadow DOM side panel.
 - Injects generated workflows into n8n canvas editor
-- Shows notifications overlaid on n8n UI
-- Prevents double-injection with `window.__n8nPilotInjected`
+- Shows chat UI with streaming responses
+- Context-aware: detects current workflow, node selection
+- Shadow DOM isolation (no CSS conflicts with n8n)
+
+### Context Menu
+3 actions: Explain, Generate Code Node, Optimize with AI.
+Registered in background.js, dispatched to content script panel.
 
 ## Library Modules (`lib/`)
 
 | Module | Purpose |
 |--------|---------|
-| `claude-client.js` | Anthropic API: POST /v1/messages, retry (3x), 3min timeout |
-| `workflow-generator.js` | Build system prompt + call Claude + validate output |
-| `workflow-validator.js` | Validate/normalize n8n workflow JSON (350 lines) |
-| `n8n-client.js` | n8n REST API: workflows, executions, variables, 15s timeout |
-| `settings.js` | Read/write settings with encryption integration |
+| `claude-client.js` | Anthropic API: streaming + non-streaming, retry (3x), 3min timeout |
+| `workflow-generator.js` | Build enhanced prompt from blueprint + templates, call Claude, validate |
+| `workflow-validator.js` | Normalize pipeline: typeVersions, parameters, model actualization (~350 lines) |
+| `prompt-analyzer.js` | NLP: user prompt → WorkflowBlueprint (55+ platform patterns) |
+| `model-actualizer.js` | Map deprecated AI models to current (OpenAI: gpt-4→gpt-4.1-nano, Gemini: 2.0→2.5) |
+| `template-search.js` | HTTP client: search, diagram, categories, stats, integrations (localhost:8000) |
+| `node-catalog-core.js` | Core node schemas with exact parameter structures (Webhook, IF, Code, OpenAI, Gemini) |
+| `node-catalog-index.js` | 150+ n8n node type registry (name, type, description, category) |
+| `n8n-client.js` | n8n REST API: workflows, executions, variables, tags, credentials |
+| `settings.js` | Read/write settings with encryption, templateServerUrl support |
 | `crypto.js` | AES-256-GCM encryption via Web Crypto API |
 | `history.js` | Store/retrieve generation history in chrome.storage |
 | `versions.js` | Workflow versioning: save, compare, rollback |
-| `utils.js` | UUID, timestamp, JSON parsing, escapeHtml, etc. |
+| `utils.js` | UUID, timestamp, JSON parsing, escapeHtml, debounce |
 
 ## Data Flow
 
-### Generate Workflow
+### Generate Workflow (Smart Pipeline)
 ```
-User prompt → popup.js
-  → sendMessage(generateWorkflow)
+User prompt → content.js panel
+  → sendMessage(analyzePrompt)
+    → prompt-analyzer.js → WorkflowBlueprint
+  → sendMessage(generateFromBlueprint)
     → background.js
+      → template-search.js (find matching templates)
       → workflow-generator.js
+        → buildEnhancedPrompt(blueprint, templates)
         → claude-client.js → Anthropic API
-      → workflow-validator.js (validate JSON)
+      → workflow-validator.js
+        → normalize (typeVersions, parameters)
+        → model-actualizer.js (fix deprecated models)
     → history.js (save to storage)
-  → popup.js (display result with Copy/Inject/Save/Download)
+  → content.js (display + inject into n8n)
 ```
 
-### Inject Workflow
+### Template Search Pipeline
 ```
-User clicks Inject → popup.js
-  → sendMessage(injectWorkflow)
-    → background.js
-      → chrome.scripting.executeScript → content.js
-        → Copy to clipboard
-        → Find n8n canvas, dispatch paste event
-        → Show overlay notification
+Blueprint → buildSearchQuery() → keywords
+  → searchTemplates(query, trigger, complexity)
+    → GET /api/workflows?q=...&trigger=...
+  → top 3 matches → buildTemplateHint()
+    → injected into system prompt as reference examples
 ```
 
-### Settings & Security
+### Model Actualization
 ```
-User enters API key → popup.js
-  → sendMessage(updateSettings)
-    → background.js → settings.js
-      → crypto.js (AES-256-GCM encrypt)
-        → chrome.storage.local (encrypted value)
+Node with modelId: "gpt-4o"
+  → actualizeNode()
+    → OPENAI_MODEL_MAP["gpt-4o"] → "gpt-4.1-nano"
+    → update __rl value + cachedResultName
 ```
 
 ## Security
 
-- **API keys:** Never stored in plaintext — AES-256-GCM via Web Crypto API
-- **CSP:** `script-src 'self'; object-src 'none'` — no inline scripts
-- **Permissions:** Minimal + optional (user grants n8n host on first use)
+- **API keys:** AES-256-GCM encrypted in `chrome.storage.local`
+- **CSP:** `script-src 'self'; object-src 'none'`
+- **Permissions:** Minimal + optional host permissions
 - **No external CDNs** — all code local
-- **No telemetry** — zero external calls except Claude API + user's n8n
+- **No telemetry** — only calls: Claude API, user's n8n, local template server
+- **Shadow DOM** — panel isolated from page CSS/JS
 
 ## Testing
 
 | Type | Tool | Count |
 |------|------|-------|
-| Unit tests | Vitest | ~284 tests + 17 regression, 12 files |
+| Unit tests | Vitest | 415 tests, 14 files |
 | E2E tests | Playwright | Mock Claude + n8n servers |
-| Coverage | Vitest coverage | `npm run test:coverage` |
+| Acceptance | Custom | Generate → push → verify in real n8n |
+| Coverage | Vitest | `npm run test:coverage` |
 
 ## File Structure
 
 ```
 n8n-pilot/
-├── manifest.json          # Chrome Extension Manifest V3
-├── background.js          # Service Worker (main orchestrator)
-├── popup.html             # Popup UI markup
-├── popup.js               # Popup UI logic
-├── popup.css              # Dark theme styles
-├── content.js             # n8n page content script
-├── diagnostic.html        # Debug/diagnostic tool
-├── lib/                   # Core library modules
-│   ├── claude-client.js
-│   ├── workflow-generator.js
-│   ├── workflow-validator.js
-│   ├── n8n-client.js
-│   ├── settings.js
-│   ├── crypto.js
-│   ├── history.js
-│   ├── versions.js
-│   └── utils.js
-├── icons/                 # Extension icons (16, 32, 48, 128px)
-├── tests/                 # Test suite
-│   ├── unit/              # Vitest unit tests
-│   │   └── kodex-regression.test.js  # 17 regression tests
-│   └── e2e/               # Playwright E2E tests
-├── security/              # Framework security tools
-├── src/framework-core/    # Framework CLI (migration)
-└── .claude/               # Framework state files
+├── manifest.json              # Chrome Extension Manifest V3
+├── background.js              # Service Worker (40+ message actions)
+├── content.js                 # Content Script + Shadow DOM panel
+├── popup.html/js/css          # Settings/fallback UI
+├── lib/
+│   ├── claude-client.js       # Anthropic API (streaming)
+│   ├── workflow-generator.js  # Generation + template hints
+│   ├── workflow-validator.js  # Normalize pipeline
+│   ├── prompt-analyzer.js     # NLP → Blueprint (55+ platforms)
+│   ├── model-actualizer.js    # Deprecated model mapping
+│   ├── template-search.js     # Template library client
+│   ├── node-catalog-core.js   # Core node schemas
+│   ├── node-catalog-index.js  # 150+ node registry
+│   ├── n8n-client.js          # n8n REST API
+│   ├── settings.js            # Settings management
+│   ├── crypto.js              # AES-256-GCM encryption
+│   ├── history.js             # Generation history
+│   ├── versions.js            # Workflow versioning
+│   └── utils.js               # Utilities
+├── example/                   # 6 real workflow JSONs
+├── tests/
+│   ├── unit/                  # 415 unit tests (Vitest)
+│   ├── e2e/                   # Playwright E2E tests
+│   └── acceptance/            # Real n8n integration tests
+├── icons/                     # Extension icons
+└── .claude/                   # Framework state files
 ```

@@ -1,8 +1,8 @@
 # n8n Pilot
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-2.1.0-blue)
 ![Chrome Extension](https://img.shields.io/badge/chrome-Manifest%20V3-green)
-![Tests](https://img.shields.io/badge/tests-301%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-415%20passing-brightgreen)
 ![Node](https://img.shields.io/badge/node-18%2B-339933)
 ![Claude API](https://img.shields.io/badge/Claude-Sonnet%204.5%20%7C%20Opus%204-blueviolet)
 ![License](https://img.shields.io/badge/license-Private-lightgrey)
@@ -173,19 +173,26 @@ n8n-pilot/
 ├── background.js          # Service Worker (роутинг сообщений)
 ├── content.js             # Content Script (инъекция в n8n)
 ├── lib/
-│   ├── claude-client.js   # Клиент Anthropic API
-│   ├── workflow-generator.js # Генерация/модификация workflows
-│   ├── n8n-client.js      # Клиент n8n REST API
-│   ├── workflow-validator.js # Валидация JSON-структуры
-│   ├── settings.js        # Управление настройками
-│   ├── history.js         # История генераций
-│   ├── versions.js        # Версионирование workflows
-│   ├── crypto.js          # Шифрование API ключей
-│   └── utils.js           # Утилиты
+│   ├── claude-client.js       # Клиент Anthropic API (streaming)
+│   ├── workflow-generator.js  # Генерация с blueprint + template hints
+│   ├── workflow-validator.js  # Normalize pipeline (параметры, модели)
+│   ├── prompt-analyzer.js     # NLP: промпт → blueprint (55+ платформ)
+│   ├── model-actualizer.js    # Актуализация устаревших AI моделей
+│   ├── template-search.js     # Клиент библиотеки шаблонов (2053 шт.)
+│   ├── node-catalog-core.js   # Схемы параметров ключевых нод
+│   ├── node-catalog-index.js  # Реестр 150+ типов нод n8n
+│   ├── n8n-client.js          # Клиент n8n REST API
+│   ├── settings.js            # Управление настройками
+│   ├── history.js             # История генераций
+│   ├── versions.js            # Версионирование workflows
+│   ├── crypto.js              # Шифрование API ключей (AES-256-GCM)
+│   └── utils.js               # Утилиты
+├── example/                   # 6 реальных workflow JSON
 ├── tests/
-│   ├── unit/              # 284 юнит-теста (Vitest)
-│   └── e2e/               # E2E тесты (Playwright)
-└── icons/                 # Иконки 16-128px
+│   ├── unit/                  # 415 юнит-тестов (Vitest)
+│   ├── e2e/                   # E2E тесты (Playwright)
+│   └── acceptance/            # Интеграционные тесты с n8n
+└── icons/                     # Иконки 16-128px
 ```
 
 ### Поддерживаемые модели Claude

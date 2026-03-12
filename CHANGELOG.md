@@ -9,6 +9,51 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-03-11
+
+### Added
+- Model actualizer (`lib/model-actualizer.js`): auto-replaces deprecated AI models
+  - OpenAI: gpt-4, gpt-4o, chatgpt-4o-latest → gpt-4.1-nano
+  - Gemini: gemini-2.0-flash, gemini-1.5-flash → models/gemini-2.5-flash
+  - Integrated into normalize pipeline (transparent to users)
+- Template search integration (`lib/template-search.js`): HTTP client for local template library
+  - searchTemplates, getTemplate, getDiagram, getCategories, getStats, getIntegrations
+  - Auto-searches matching templates before generation, injects as reference examples
+  - Graceful degradation: works without template server
+- Expanded prompt-analyzer platform detection from ~25 to 55+ platforms
+  - CRM: HubSpot, Salesforce, Mailchimp, SendGrid
+  - Social: Twitter, Facebook, Instagram, LinkedIn
+  - E-commerce: Shopify, Stripe, WooCommerce
+  - Databases: Redis, Supabase, Firebase
+  - DevOps: GitLab, Sentry, PagerDuty
+  - Communication: WhatsApp, Microsoft Teams, Twilio
+  - AI: Ollama, Pinecone
+  - And more: Dropbox, AWS S3, Trello, Asana, Linear, ClickUp, Todoist, WordPress, YouTube, Google Calendar, FTP/SSH, XML
+- 7 new background.js message actions for template search
+- `.env.example` for development configuration
+- Example workflow JSONs (`example/` directory)
+- Acceptance test infrastructure (`tests/acceptance/`)
+- E2E test suite (Playwright): panel, chat, settings, workflows
+
+### Fixed
+- OpenAI node parameters: `model`+`prompt` → `modelId`+`messages.values[]` (v1.8 format)
+- Gemini node parameters: `model` → `modelId`, added `builtInTools: {}` (v1.1 format)
+- IF node conditions: added `typeValidation: "strict"` + `version: 3` (v2.3 format)
+- Filter node conditions: added `typeValidation: "strict"` + `version: 2`
+- Node catalog: OpenAI and Gemini defaults now use correct parameter schemas
+
+## [2.0.0] - 2026-03-10
+
+### Added
+- Injected side panel architecture (Shadow DOM, replaces popup)
+- Chat UI with streaming responses
+- Smart generator: prompt → blueprint → enhanced prompt → Claude → normalize
+- Node catalog: 150+ node types + core schemas
+- Prompt analyzer: NLP-based workflow blueprint from natural language
+- Context awareness: detects current n8n workflow
+- Context menu integration (Explain, Generate Code, Optimize)
+- Chat memory with FIFO eviction (100 messages per context)
+
 ## [1.0.0] - 2026-03-10
 
 ### Added
