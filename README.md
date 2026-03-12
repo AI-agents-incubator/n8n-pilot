@@ -2,7 +2,7 @@
 
 ![Version](https://img.shields.io/badge/version-2.3.0-blue)
 ![Chrome Extension](https://img.shields.io/badge/chrome-Manifest%20V3-green)
-![Tests](https://img.shields.io/badge/tests-415%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-438%20passing-brightgreen)
 ![Node](https://img.shields.io/badge/node-18%2B-339933)
 ![Claude API](https://img.shields.io/badge/Claude-Sonnet%204.5%20%7C%20Opus%204-blueviolet)
 ![License](https://img.shields.io/badge/license-Private-lightgrey)
