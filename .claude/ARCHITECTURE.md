@@ -107,7 +107,7 @@ n8n-pilot/
 ├── manifest.json              # Chrome Extension Manifest V3
 ├── background.js              # Service Worker (40+ message actions)
 ├── content.js                 # Content Script + Shadow DOM panel
-├── popup.html/js/css          # Settings/fallback UI
+├── panel/                     # Side panel views (chat, settings, history)
 ├── lib/
 │   ├── claude-client.js       # Anthropic API (streaming)
 │   ├── workflow-generator.js  # Generation + template hints

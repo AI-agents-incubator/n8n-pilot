@@ -145,6 +145,10 @@ async function resetAllData() {
     try {
       await _msg('resetSettings');
       await _msg('clearHistory');
+      await _msg('clearChatHistory', { workflowId: 'default' });
+      // Clear all chat memory contexts and version snapshots
+      await chrome.storage.local.remove('n8nPilotChatMemory');
+      await chrome.storage.local.remove('n8nPilotVersions');
       resetBtn.dataset.confirming = 'false';
       resetBtn.textContent = 'Reset All Data';
       loadSettingsData();

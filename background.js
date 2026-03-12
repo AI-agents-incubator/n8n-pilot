@@ -240,8 +240,19 @@ async function handleMessage(msg, sender) {
 
       const streamSettings = await settings.getAll();
 
+      // Smart pipeline: analyze prompt → find templates → build enhanced prompt
+      const streamBlueprint = promptAnalyzer.analyze(msg.prompt);
+      const streamTemplates = await templateSearch.findTemplates(streamBlueprint, {
+        baseUrl: streamSettings.templateServerUrl,
+        limit: 3,
+      }).catch(() => []);
+
+      const streamSystemPrompt = generator.buildStreamingPrompt(
+        streamBlueprint, streamTemplates, promptAnalyzer.buildEnhancedPrompt
+      );
+
       await claudeClient.sendMessageStream({
-        systemPrompt: generator.getSystemPrompt(),
+        systemPrompt: streamSystemPrompt,
         userPrompt: msg.prompt,
         model: msg.model || streamSettings.claudeModel,
         abortSignal: generationController.signal,
@@ -257,10 +268,13 @@ async function handleMessage(msg, sender) {
         onDone: async (result) => {
           generationController = null;
 
+          // Post-process: normalize any workflow JSON in the streamed response
+          const normalizedContent = generator.postProcessStreamResult(result.content);
+
           if (activeStreamTabId) {
             chrome.tabs.sendMessage(activeStreamTabId, {
               type: 'STREAM_DONE',
-              fullText: result.content,
+              fullText: normalizedContent,
               usage: result.tokensUsed,
               model: result.model,
             }).catch(() => {});
@@ -271,7 +285,7 @@ async function handleMessage(msg, sender) {
             try {
               await history.add({
                 prompt: msg.prompt,
-                workflow: result.content,
+                workflow: normalizedContent,
                 model: result.model,
                 tokensUsed: result.tokensUsed,
                 duration: result.duration,
@@ -383,6 +397,10 @@ async function handleMessage(msg, sender) {
 
     // === Chat Memory ===
     case 'saveChatMessage': {
+      // Respect saveHistory preference for chat memory too
+      const chatSettings = await settings.getAll();
+      if (chatSettings.saveHistory === false) return { success: true };
+
       const chatKey = 'n8nPilotChatMemory';
       const chatData = (await chrome.storage.local.get(chatKey))[chatKey] || {};
       const contextId = msg.workflowId || 'default';

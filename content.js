@@ -527,6 +527,11 @@
       try {
         await _msg('resetSettings');
         await _msg('clearHistory');
+        await _msg('clearChatHistory', { workflowId: 'default' });
+        // Clear all chat memory contexts
+        await chrome.storage.local.remove('n8nPilotChatMemory');
+        // Clear version snapshots
+        await chrome.storage.local.remove('n8nPilotVersions');
         resetBtn.dataset.confirming = 'false';
         resetBtn.textContent = 'Reset All Data';
         loadSettingsData();
@@ -1230,7 +1235,10 @@
         const promptExcerpt = (entry.prompt || '').substring(0, 60) +
           ((entry.prompt || '').length > 60 ? '...' : '');
         const model = entry.model || 'unknown';
-        const tokens = entry.tokensUsed || 0;
+        const rawTokens = entry.tokensUsed || 0;
+        const tokens = typeof rawTokens === 'object'
+          ? (rawTokens.input || 0) + (rawTokens.output || 0)
+          : rawTokens;
         const timeText = _timeAgo(entry.timestamp);
 
         item.innerHTML = `
