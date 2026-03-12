@@ -1,6 +1,6 @@
 # SNAPSHOT — n8n Pilot
 
-**Version:** 2.1.0 | **Phase:** Phase 6 Complete | **Progress:** 100%
+**Version:** 2.2.0 | **Phase:** Phase 6 Complete | **Progress:** 100%
 
 ## Project
 Chrome Extension (Manifest V3) — AI-powered n8n workflow manager with Claude API integration.
@@ -26,24 +26,31 @@ model actualizer, template library integration. Fully local, privacy-first.
 
 ## Current Status
 - ✅ Side panel injected into n8n pages (Shadow DOM isolation)
-- ✅ Chat UI with streaming responses
+- ✅ Chat UI with streaming responses + multi-turn conversation memory
 - ✅ Smart generation: prompt → blueprint → enhanced prompt → Claude → normalize
 - ✅ Context-aware: detects current n8n workflow, secondary views
 - ✅ Context menu integration (Explain, Generate Code, Optimize)
 - ✅ Model actualizer: auto-replaces deprecated AI models in generated workflows
-- ✅ Template search: finds matching templates from 2053-template library before generation
+- ✅ Template search: finds matching templates, shows badge before generation
 - ✅ Parameter format fixes: OpenAI (modelId+messages), IF/Filter (typeValidation+version)
 - ✅ 55+ platform detection in prompt analyzer
+- ✅ Clarifying questions: Claude asks before generating placeholders
+- ✅ Copy Dialog: one-click conversation export to clipboard
+- ✅ Error action cards: guided error recovery (Open Settings)
+- ✅ Workflow delta: shows node count changes on re-generation
+- ✅ Privacy controls: history toggle + full data reset
 - ✅ 415 unit tests passing (14 test files)
 - ✅ E2E + acceptance test infrastructure
 
-## Recent Work (Phase 6)
-- Model actualizer: deprecated OpenAI (gpt-4→gpt-4.1-nano) and Gemini (gemini-2.0→gemini-2.5-flash) mapping
-- Template search integration: searchTemplates, getDiagram, getCategories, getStats, getIntegrations
-- Auto-search templates before generation, inject as reference examples in prompt
-- Expanded prompt-analyzer from ~25 to 55+ platforms (CRM, social, e-commerce, DevOps, databases)
-- Fixed OpenAI/Gemini parameter format (modelId+messages, not model+prompt)
-- Fixed IF/Filter conditions.options (typeValidation+version)
+## Recent Work (v2.2.0)
+- Multi-turn conversation: sends up to 20 previous messages to Claude for context
+- System prompt rewrite: clarifying questions, no tutorials, incremental edits
+- Error action cards with "Open Settings" button for API key errors
+- Template search badge ("📎 N templates found") shown before generation
+- Workflow card delta ("+2 nodes" / "-1 node") on re-generation
+- Copy Dialog button for full conversation clipboard export
+- Security audit fixes: streaming pipeline, privacy controls, double-parse crash
+- Token count display fix (object → number)
 
 ## Tech Stack
 Vanilla JS (ES modules) | Chrome Extension MV3 | Anthropic API | n8n REST API | Vitest | Playwright

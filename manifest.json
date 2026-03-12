@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "n8n Pilot",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "AI-powered n8n workflow manager with Claude integration. Fully local, no external servers.",
   "author": "Alex Krol",
   "permissions": [
@@ -34,8 +34,16 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["panel/panel.html", "panel/panel.css", "icons/*"],
-      "matches": ["http://localhost:*/*", "http://127.0.0.1:*/*", "https://*/*"]
+      "resources": [
+        "panel/panel.html",
+        "panel/panel.css",
+        "icons/*"
+      ],
+      "matches": [
+        "http://localhost:*/*",
+        "http://127.0.0.1:*/*",
+        "https://*/*"
+      ]
     }
   ],
   "content_security_policy": {

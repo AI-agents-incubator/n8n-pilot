@@ -9,6 +9,26 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-03-11
+
+### Added
+- Multi-turn conversation: Claude remembers previous messages within a chat session (up to 20 messages)
+- Copy Dialog button: one-click copy of full conversation to clipboard
+- Template search badge: shows "📎 N templates found" before generation
+- Workflow card delta: shows node count changes (+2/-1) when re-generating
+- Error action cards: "API key not configured" errors show "Open Settings" button
+
+### Changed
+- System prompt: Claude now asks clarifying questions instead of generating placeholder workflows
+- System prompt: Claude no longer gives n8n import tutorials (user is already in n8n editor)
+- System prompt: incremental workflow edits instead of full regeneration
+- Privacy controls: chat history respects "Save History" toggle, "Reset All Data" clears chat memory
+
+### Fixed
+- Streaming pipeline: `extractJson()` double-parse crash (object parsed as string)
+- Token count display: `{input, output}` object no longer shows as `[object Object]`
+- Architecture docs: removed stale `popup.html` reference, updated to `panel/` structure
+
 ## [2.1.0] - 2026-03-11
 
 ### Added

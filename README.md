@@ -1,6 +1,6 @@
 # n8n Pilot
 
-![Version](https://img.shields.io/badge/version-2.1.0-blue)
+![Version](https://img.shields.io/badge/version-2.2.0-blue)
 ![Chrome Extension](https://img.shields.io/badge/chrome-Manifest%20V3-green)
 ![Tests](https://img.shields.io/badge/tests-415%20passing-brightgreen)
 ![Node](https://img.shields.io/badge/node-18%2B-339933)
@@ -169,9 +169,13 @@ npm run test:coverage
 ```
 n8n-pilot/
 ├── manifest.json          # Chrome Extension Manifest V3
-├── popup.html/js/css      # UI расширения (5 вкладок)
 ├── background.js          # Service Worker (роутинг сообщений)
-├── content.js             # Content Script (инъекция в n8n)
+├── content.js             # Content Script (инъекция панели в n8n)
+├── panel/
+│   ├── panel.html         # Разметка боковой панели (Shadow DOM)
+│   ├── panel.css          # Стили панели (dark theme)
+│   ├── chat.js            # Чат контроллер (standalone)
+│   └── settings-view.js   # Контроллер настроек
 ├── lib/
 │   ├── claude-client.js       # Клиент Anthropic API (streaming)
 │   ├── workflow-generator.js  # Генерация с blueprint + template hints
