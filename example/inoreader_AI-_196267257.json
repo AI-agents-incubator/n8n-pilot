@@ -1,0 +1,1563 @@
+{
+  "name": "inoreader_AI->196267257",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "={{ $json.link }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "JSON",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3568,
+        160
+      ],
+      "id": "ed349a58-39e1-4d05-8bfb-aca51d42d7d5",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "Content",
+              "cssSelector": "*"
+            }
+          ]
+        },
+        "options": {
+          "trimValues": true,
+          "cleanUpText": true
+        }
+      },
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        -3152,
+        160
+      ],
+      "id": "20504b53-b9bf-4d31-b3cf-7e7bde8e62a7",
+      "name": "HTML"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: {\n      prompt: items[0].json.Content.join('\\n\\n')\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3040,
+        -112
+      ],
+      "id": "0524a433-b906-4209-84bb-4c417aa328aa",
+      "name": "Формат для AI",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegra.ph/createAccount",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "short_name",
+              "value": "Trinity AI"
+            },
+            {
+              "name": "author_name",
+              "value": "Trinity AI"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2864,
+        704
+      ],
+      "id": "7d16ce85-7752-4a4b-a896-c002cd6f1e08",
+      "name": "Получение токена"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegra.ph/createPage",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $json.result.access_token }}"
+            },
+            {
+              "name": "title",
+              "value": "={{ $('3. Анонс').item.json.choices[0].message.content }}"
+            },
+            {
+              "name": "author_name",
+              "value": "Trinity AI"
+            },
+            {
+              "name": "author_url",
+              "value": "https://alexeykrol.com/trinityai/"
+            },
+            {
+              "name": "content",
+              "value": "={{ $('Формат telegra.ph').item.json.formatted }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2640,
+        704
+      ],
+      "id": "d25bba9f-3f8c-42c8-a6f1-d88e49f24202",
+      "name": "Публикация telegra.ph"
+    },
+    {
+      "parameters": {
+        "jsCode": "const content = items[0].json.choices[0].message.content;\n\n// Вставляем перевод строки после точки, если далее пробел и заглавная буква или цифра\nconst formatted = content.replace(/([.?!])\\s+(?=\\p{Lu}|\\d)/gu, '$1\\n');\n\nreturn [{\n  json: {\n    formatted\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1312,
+        416
+      ],
+      "id": "fcd98716-8c63-4d74-87ec-07aaf9947852",
+      "name": "Разбивает текст"
+    },
+    {
+      "parameters": {
+        "jsCode": "const formatted = items[0].json.formatted;\n\nconst paragraphs = formatted.split('\\n').map(s => s.trim()).filter(Boolean);\n\nconst telegraphNodes = paragraphs.map(text => ({\n  tag: \"p\",\n  children: [text]\n}));\n\nreturn [\n  {\n    json: {\n      formatted: JSON.stringify(telegraphNodes) // готово для отправки в Telegra.ph\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1088,
+        416
+      ],
+      "id": "36480a95-4af2-4d5e-9fdc-35798ab8a3d3",
+      "name": "Формат telegra.ph",
+      "notes": "Разберём подробно и по-человечески, что делает этот код, построчно, словами для чайника. Это код из n8n, написан на JavaScript, и он превращает обычный текст в массив объектов, подходящий для публикации на Telegra.ph.\n\n⸻\n\n🔢 Исходные данные:\n\nТы подаёшь на вход текст, в котором абзацы разделены переносами строк (\\n).\n\nНапример:\n\nПервый абзац.\n\nВторой абзац.\n\nТретий абзац.\n\n\n⸻\n\n🧠 Пошаговый разбор:\n\nconst formatted = items[0].json.formatted;\n\n📌 Что делает:\n\t•\tБерёт из первого элемента входного массива items[0] поле json.formatted — в нём находится твой текст, который ты заранее подготовил (возможно, из GPT).\n\n👀 Предположим, там такая строка:\n\nЭто первый абзац.\\n\\nЭто второй абзац.\\n\\nЭто третий абзац.\n\n\n⸻\n\n\nconst paragraphs = formatted\n  .split('\\n')          // разрезаем по каждой новой строке\n  .map(s => s.trim())   // убираем лишние пробелы вокруг строк\n  .filter(Boolean);     // удаляем пустые строки (вроде \"\")\n\n📌 Что делает:\n\t1.\t.split('\\n') — превращает строку в массив строк, разделяя по \\n.\n\t2.\t.map(s => s.trim()) — убирает пробелы у начала и конца каждой строки.\n\t3.\t.filter(Boolean) — удаляет пустые строки (например, если было две пустых строки подряд).\n\n👀 Что получится:\n\n[\n  \"Это первый абзац.\",\n  \"Это второй абзац.\",\n  \"Это третий абзац.\"\n]\n\n\n⸻\n\n\nconst telegraphNodes = paragraphs.map(text => ({\n  tag: \"p\",\n  children: [text]\n}));\n\n📌 Что делает:\n\t•\tПревращает каждую строку из массива в объект, понятный API Telegra.ph.\n\n👀 Результат:\n\n[\n  { tag: \"p\", children: [\"Это первый абзац.\"] },\n  { tag: \"p\", children: [\"Это второй абзац.\"] },\n  { tag: \"p\", children: [\"Это третий абзац.\"] }\n]\n\nЭто уже формат Telegra.ph, который ты потом можешь отправить в публикацию.\n\n⸻\n\n\nreturn [\n  {\n    json: {\n      formatted: JSON.stringify(telegraphNodes)\n    }\n  }\n];\n\n📌 Что делает:\n\t•\tВозвращает один объект в return, в формате n8n.\n\t•\tВнутри него поле formatted содержит строку — сериализованный (JSON.stringify) массив параграфов, готовый к передаче в Telegra.ph API.\n\n👀 Пример финального JSON:\n\n{\n  \"formatted\": \"[{\\\"tag\\\":\\\"p\\\",\\\"children\\\":[\\\"Это первый абзац.\\\"]},{\\\"tag\\\":\\\"p\\\",\\\"children\\\":[\\\"Это второй абзац.\\\"]}]\"\n}\n\n\n⸻\n\n🧾 Вывод:\n\nЭтот код делает 4 вещи:\n\t1.\tБерёт готовый текст из поля formatted;\n\t2.\tРазбивает его на отдельные абзацы;\n\t3.\tПреобразует каждый абзац в Telegra.ph-совместимый объект;\n\t4.\tОтдаёт результат как JSON-строку для публикации.\n\n⸻\n\nХочешь — могу расширить код, чтобы он автоматически добавлял заголовки, жирные фразы, ссылки и прочее по правилам Telegra.ph."
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4.1-nano",
+          "mode": "list",
+          "cachedResultName": "GPT-4.1-NANO"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "Task 1: Clean and extract content.\nCarefully preserve the article’s core content.\n– Remove all irrelevant elements such as menus, links, navigation, subscription boxes, logos, buttons, and promotional material.\n– Keep only the main text of the article and any information about the author.\n– Do not rewrite or summarize. Do not add anything that was not originally in the article.\n\nTask 2: Analyze for AI relevance.\nAfter cleaning, analyze the resulting text.\nIf the article explicitly or implicitly refers to artificial intelligence, including any of the following:\n\t•\tAI models (e.g. LLMs, neural networks, machine learning, generative AI)\n\t•\tAI applications (e.g. automation, generation, chatbots, assistants, robotics, synthesis, analytics)\n\t•\tDiscussion of AI-related risks, regulations, ethics, or impact (on science, markets, creativity, society, military, etc.)\n\t•\tSpecific companies, products, or use cases where AI is a central topic\n\n→ Then, at the very end of the output, on a new line, append this exact word: \"aicontent\".\n\nIf AI is not mentioned at all, or only briefly or irrelevantly,\n→ Then append this word instead: \"noai\".\n\nYour output should be:\n1. The cleaned article content, exactly as found.\n2. A single word \"aicontent\" or \"noai\" appended on a new line at the end.\n3. Do not include titles, summaries, explanations, or any extra text.",
+              "role": "system"
+            },
+            {
+              "content": "={{ $json.Content }}"
+            }
+          ]
+        },
+        "simplify": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -2592,
+        160
+      ],
+      "id": "13caf06f-a087-4a1b-ae6f-86f9369d4087",
+      "name": "1. Мусор и анализ noai",
+      "notesInFlow": true,
+      "notes": "4.1nano"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "GPT-4O"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=1. Переведи на русский максимально точно, в саркастическом стиле, высмеивая и выражая сомнение. \n\n2. Информацию об авторе переведи в виде короткого саммари и поставь ПОСЛЕ основного текста. \n\n3. От себя ничего не добавляй.\n\nПосле статьи добавляй фразу \"Статья творчески переработана Тринити AI\",\\n\\n \"Источник: {{ $('RSS_Feed_Trigger').item.json.link }}\"",
+              "role": "system"
+            },
+            {
+              "content": "={{ $json.choices[0].message.content }}"
+            }
+          ]
+        },
+        "simplify": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -2864,
+        416
+      ],
+      "id": "047863db-93c4-4ab8-8838-d8a2e28d2e93",
+      "name": "2. Перевод на русский",
+      "notesInFlow": true,
+      "notes": "4o"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4.1-nano",
+          "mode": "list",
+          "cachedResultName": "GPT-4.1-NANO"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "Создай на базе текста анонс с фокусом на новых возможностеи. Размер анонса примерно 100 символов или 20-25 слов.",
+              "role": "system"
+            },
+            {
+              "content": "={{ $json.choices[0].message.content }}"
+            }
+          ]
+        },
+        "simplify": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -2480,
+        416
+      ],
+      "id": "08b0bd1e-0a7d-4444-9068-8f62c941b02f",
+      "name": "3. Анонс",
+      "notesInFlow": true,
+      "notes": "4.1nano"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4.1-nano",
+          "mode": "list",
+          "cachedResultName": "GPT-4.1-NANO"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "Создай развернутое саммари текста User объемом не более 500 символов.",
+              "role": "system"
+            },
+            {
+              "content": "={{ $('2. Перевод на русский').item.json.choices[0].message.content }}"
+            }
+          ]
+        },
+        "simplify": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -1888,
+        416
+      ],
+      "id": "6a763d60-67ca-4e4f-9aad-ca58524d49b8",
+      "name": "4. Саммари",
+      "notesInFlow": true,
+      "notes": "4.1nano"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "bca4b381-da25-470e-b2c4-0b4167b3c9d4",
+              "name": "token_noai",
+              "value": "={{ $('1. Мусор и анализ noai').item.json.usage.prompt_tokens }}",
+              "type": "number"
+            },
+            {
+              "id": "b46097b9-474f-47e5-b154-fe401a6e40fe",
+              "name": "token_anonce",
+              "value": "={{ $('3. Анонс').item.json.usage.prompt_tokens }}",
+              "type": "number"
+            },
+            {
+              "id": "f2e14e7d-6a19-4d3c-97f8-674aca739af7",
+              "name": "token_sammary",
+              "value": "={{ $('4. Саммари').item.json.usage.prompt_tokens }}",
+              "type": "number"
+            },
+            {
+              "id": "29334311-3686-4c4b-aee0-bd69bcb33265",
+              "name": "P_Token_Sum",
+              "value": "={{    $('1. Мусор и анализ noai').item.json.usage.prompt_tokens +   $('3. Анонс').item.json.usage.prompt_tokens +   $('4. Саммари').item.json.usage.prompt_tokens }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -2208,
+        704
+      ],
+      "id": "09e627b7-e0b0-4d60-93c7-7c862a063dc9",
+      "name": "P_token4.1nano1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const cost1 = $items('Цена за 4o')[0].json.cost_usd;\nconst cost2 = $items('Цена за 4.1nano')[0].json.cost_usd;\n\nconst totalCost = cost1 + cost2;\n\nreturn [{\n  json: {\n    cost_model_4o: cost1,\n    cost_model_4_1nano: cost2,\n    total_cost_usd: parseFloat(totalCost.toFixed(6)) // округляем до 6 знаков\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1104,
+        704
+      ],
+      "id": "a9ccf608-789d-44c2-b87c-d14e9f308f7e",
+      "name": "P_tokens"
+    },
+    {
+      "parameters": {
+        "chatId": "196267257",
+        "text": "=<b>{{ $('3. Анонс').first().json.choices[0].message.content }}</b>\n\n{{ $('4. Саммари').first().json.choices[0].message.content }}\n\nСтоимость новости: {{ $('P_tokens').first().json.total_cost_usd }} $\n\nПоток: n8n:inoreader_AI->196267257",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -880,
+        704
+      ],
+      "id": "f2d4e6b3-d38c-4827-aa0c-e98a64fb1074",
+      "name": "Telegram1",
+      "webhookId": "1bf7b409-bfd7-413c-b6f2-f2b1c177113c",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "// Шаг 1: Цена одного токена\nconst pricePerToken = 0.1 / 1_000_000;\n\n// Шаг 2: Получаем сумму токенов из ноды P_token4.1nano1\nconst promptTokens = $('P_token4.1nano1').item.json.P_Token_Sum;\n\n// Шаг 3: Считаем стоимость\nconst cost = promptTokens * pricePerToken;\n\n// Шаг 4: Возвращаем результат\nreturn [{\n  json: {\n    prompt_tokens: promptTokens,\n    price_per_token: pricePerToken,\n    cost_usd: parseFloat(cost.toFixed(6))  // округляем до 6 знаков\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1424,
+        704
+      ],
+      "id": "fd0a1442-be53-4a7f-90d6-812bdc95de60",
+      "name": "Цена за 4.1nano"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Шаг 1: Цена одного токена\nconst pricePerToken = 2.5 / 1_000_000;\n\n// Шаг 2: Получаем количество токенов из нужной ноды\nconst promptTokens = $('2. Перевод на русский').item.json.usage.prompt_tokens;\n\n// Шаг 3: Считаем: (promptTokens * 2.5) * pricePerToken\nconst cost = promptTokens * 2.5 * pricePerToken;\n\nreturn [{\n  json: {\n    prompt_tokens: promptTokens,\n    price_per_token: pricePerToken,\n    cost_usd: parseFloat(cost.toFixed(6))  // округление до 6 знаков\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1744,
+        704
+      ],
+      "id": "1c1c15d7-ede4-4aa7-abc4-3587f10bd044",
+      "name": "Цена за 4o"
+    },
+    {
+      "parameters": {
+        "content": "Получатель - 196267257 - ",
+        "height": 97,
+        "width": 636,
+        "color": 7
+      },
+      "id": "81199d30-ef4c-457c-8f85-ae4a14f864af",
+      "name": "Sticky Note7",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2720,
+        0
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a066f822-074c-4f30-8c84-1d349c523f59",
+              "leftValue": "={{ $json.choices[0].message.content }}",
+              "rightValue": "aicontent",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        -1232,
+        160
+      ],
+      "id": "b85784f4-152a-4d86-811a-afa818385244",
+      "name": "aicontent"
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "app5VGioZdapp729W",
+          "mode": "list",
+          "cachedResultName": "Агент",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblbWGPI4WUCdZBX8",
+          "mode": "list",
+          "cachedResultName": "Trinity_raw_Input_1",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W/tblbWGPI4WUCdZBX8"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Title": "={{ $('RSS_Feed_Trigger').item.json.title }}",
+            "Content": "={{ $('1. Мусор и анализ noai').item.json.choices[0].message.content }}",
+            "Date": "={{ $('RSS_Feed_Trigger').item.json.pubDate }}",
+            "origin_URL": "={{ $('RSS_Feed_Trigger').item.json.link }}",
+            "Description": "={{ $('RSS_Feed_Trigger').item.json.contentSnippet }}",
+            "Feed": "={{ $json.domain }}",
+            "Tech": "n8n",
+            "my_ID": "={{ $json.guid }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "my_ID",
+              "displayName": "my_ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Quality",
+              "displayName": "Quality",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Feed",
+              "displayName": "Feed",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "AI-eval",
+              "displayName": "AI-eval",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Tech",
+              "displayName": "Tech",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "AI_expain",
+              "displayName": "AI_expain",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Last Modified",
+              "displayName": "Last Modified",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Content",
+              "displayName": "Content",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Description",
+              "displayName": "Description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Created",
+              "displayName": "Created",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "origin_URL",
+              "displayName": "origin_URL",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Topics",
+              "displayName": "Topics",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Keywords",
+              "displayName": "Keywords",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "options": [],
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -1200,
+        -192
+      ],
+      "id": "9e0119dc-1033-4cb5-93a0-8c82ce5768d4",
+      "name": "Airtable"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "feedUrl": "https://www.inoreader.com/stream/user/1004901627/tag/AI"
+      },
+      "type": "n8n-nodes-base.rssFeedReadTrigger",
+      "typeVersion": 1,
+      "position": [
+        -4192,
+        160
+      ],
+      "id": "ea559493-aeb8-4a0a-b69d-97beb3cf8bfd",
+      "name": "RSS_Feed_Trigger",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "resource": "assistant",
+        "assistantId": {
+          "__rl": true,
+          "value": "asst_RTPQWJGSBCxvaHQvzh5uxTNV",
+          "mode": "list",
+          "cachedResultName": "Feed_Filter"
+        },
+        "prompt": "define",
+        "text": "={{ $json.fields.Content }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -944,
+        -192
+      ],
+      "id": "760ac19a-fa87-4d4c-8158-0505b99cddd8",
+      "name": "4. Саммари1",
+      "notesInFlow": true,
+      "notes": "4.1nano"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d72b0096-6bb1-4b96-8cbe-ed64a2af5881",
+              "leftValue": "={{ $json.output }}",
+              "rightValue": "Good",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        -304,
+        -384
+      ],
+      "id": "d0eea4ab-ed9d-4250-8c34-f7b702584d0b",
+      "name": "Good"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d72b0096-6bb1-4b96-8cbe-ed64a2af5881",
+              "leftValue": "={{ $json.output }}",
+              "rightValue": "Bad",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        -304,
+        -80
+      ],
+      "id": "bfbb21b9-1ce6-4091-a52e-38e67bbebb45",
+      "name": "Bad"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mode: Run Once for All Items\nconst feedItems = $items(\"RSS_Feed_Trigger\");\n\nreturn feedItems.map(({ json }) => {\n  const raw = (json.link ?? \"\").trim();\n\n  let domain = null;\n\n  // ① Пытаемся «по-нормальному»\n  try {\n    domain = new URL(raw).hostname;\n  } catch (_) {\n    // ② Fallback → вытаскиваем домен RegExp-ом\n    const m = raw.match(/https?:\\/\\/([^\\/\\s]+)/i);\n    if (m) domain = m[1];\n  }\n\n  // убираем www.\n  if (domain) domain = domain.replace(/^www\\./, \"\");\n\n  return { json: { ...json, domain } };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1904,
+        -192
+      ],
+      "id": "5044d11d-dee4-4a51-ac51-ef22279b424b",
+      "name": "Take_domain",
+      "notesInFlow": true,
+      "notes": "Выделяет домен источника"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "app5VGioZdapp729W",
+          "mode": "list",
+          "cachedResultName": "Агент",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblbWGPI4WUCdZBX8",
+          "mode": "list",
+          "cachedResultName": "Trinity_raw_Input_1",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W/tblbWGPI4WUCdZBX8"
+        },
+        "filterByFormula": "={my_ID} = \"{{ $('Airtable').item.json.fields.my_ID }}\"",
+        "returnAll": false,
+        "limit": 1,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        -384
+      ],
+      "id": "073919a9-f1c8-4d93-bfea-e440698c88cc",
+      "name": "SearchGood"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "app5VGioZdapp729W",
+          "mode": "list",
+          "cachedResultName": "Агент",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblbWGPI4WUCdZBX8",
+          "mode": "list",
+          "cachedResultName": "Trinity_raw_Input_1",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W/tblbWGPI4WUCdZBX8"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "AI-eval": "Bad",
+            "AI_expain": "={{ $('4. Саммари1').item.json.output }}",
+            "my_ID": "={{ $json.my_ID }}"
+          },
+          "matchingColumns": [
+            "my_ID"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "my_ID",
+              "displayName": "my_ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Quality",
+              "displayName": "Quality",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Feed",
+              "displayName": "Feed",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "AI-eval",
+              "displayName": "AI-eval",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Tech",
+              "displayName": "Tech",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "AI_expain",
+              "displayName": "AI_expain",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Last Modified",
+              "displayName": "Last Modified",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Content",
+              "displayName": "Content",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Description",
+              "displayName": "Description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Created",
+              "displayName": "Created",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "origin_URL",
+              "displayName": "origin_URL",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Topics",
+              "displayName": "Topics",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Keywords",
+              "displayName": "Keywords",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "options": [],
+              "readOnly": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": false
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        288,
+        -384
+      ],
+      "id": "12a6ab25-fac6-40f8-9cca-a3740400d278",
+      "name": "UpdateGood"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "app5VGioZdapp729W",
+          "mode": "list",
+          "cachedResultName": "Агент",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblbWGPI4WUCdZBX8",
+          "mode": "list",
+          "cachedResultName": "Trinity_raw_Input_1",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W/tblbWGPI4WUCdZBX8"
+        },
+        "filterByFormula": "={my_ID} = \"{{ $('Airtable').item.json.fields.my_ID }}\"",
+        "returnAll": false,
+        "limit": 1,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -32,
+        -80
+      ],
+      "id": "aacdff84-eff4-4cf2-87c4-d4b3c844354f",
+      "name": "SearchBad"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "app5VGioZdapp729W",
+          "mode": "list",
+          "cachedResultName": "Агент",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblbWGPI4WUCdZBX8",
+          "mode": "list",
+          "cachedResultName": "Trinity_raw_Input_1",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W/tblbWGPI4WUCdZBX8"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "AI-eval": "Bad",
+            "AI_expain": "={{ $('4. Саммари1').item.json.output }}",
+            "my_ID": "={{ $json.my_ID }}"
+          },
+          "matchingColumns": [
+            "my_ID"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "my_ID",
+              "displayName": "my_ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Quality",
+              "displayName": "Quality",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Feed",
+              "displayName": "Feed",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "AI-eval",
+              "displayName": "AI-eval",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Tech",
+              "displayName": "Tech",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "AI_expain",
+              "displayName": "AI_expain",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Last Modified",
+              "displayName": "Last Modified",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Content",
+              "displayName": "Content",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Description",
+              "displayName": "Description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Created",
+              "displayName": "Created",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "origin_URL",
+              "displayName": "origin_URL",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Topics",
+              "displayName": "Topics",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Keywords",
+              "displayName": "Keywords",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "options": [],
+              "readOnly": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": false
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        288,
+        -80
+      ],
+      "id": "d9f8512e-88d0-4a31-b9f0-3365d2595786",
+      "name": "UpdateBad"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML": {
+      "main": [
+        [
+          {
+            "node": "1. Мусор и анализ noai",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Получение токена": {
+      "main": [
+        [
+          {
+            "node": "Публикация telegra.ph",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Публикация telegra.ph": {
+      "main": [
+        [
+          {
+            "node": "P_token4.1nano1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Разбивает текст": {
+      "main": [
+        [
+          {
+            "node": "Формат telegra.ph",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Формат telegra.ph": {
+      "main": [
+        [
+          {
+            "node": "Получение токена",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Мусор и анализ noai": {
+      "main": [
+        [
+          {
+            "node": "aicontent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Take_domain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Перевод на русский": {
+      "main": [
+        [
+          {
+            "node": "3. Анонс",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Анонс": {
+      "main": [
+        [
+          {
+            "node": "4. Саммари",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Саммари": {
+      "main": [
+        [
+          {
+            "node": "Разбивает текст",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "P_token4.1nano1": {
+      "main": [
+        [
+          {
+            "node": "Цена за 4o",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "P_tokens": {
+      "main": [
+        [
+          {
+            "node": "Telegram1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Цена за 4.1nano": {
+      "main": [
+        [
+          {
+            "node": "P_tokens",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Цена за 4o": {
+      "main": [
+        [
+          {
+            "node": "Цена за 4.1nano",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aicontent": {
+      "main": [
+        [
+          {
+            "node": "2. Перевод на русский",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS_Feed_Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable": {
+      "main": [
+        [
+          {
+            "node": "4. Саммари1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Саммари1": {
+      "main": [
+        [
+          {
+            "node": "Good",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Bad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Good": {
+      "main": [
+        [
+          {
+            "node": "SearchGood",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bad": {
+      "main": [
+        [
+          {
+            "node": "SearchBad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Take_domain": {
+      "main": [
+        [
+          {
+            "node": "Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SearchGood": {
+      "main": [
+        [
+          {
+            "node": "UpdateGood",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SearchBad": {
+      "main": [
+        [
+          {
+            "node": "UpdateBad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "59e4631f-e43c-470c-8f12-76da81905ebb",
+  "meta": {
+    "instanceId": "66a195d263b6b75f5cc2ab03beb8a190c92ab4b01a51d8ebc4796204925a864a"
+  },
+  "id": "pVCvWLEzsTYetui6",
+  "tags": []
+}

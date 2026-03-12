@@ -1,0 +1,403 @@
+{
+  "model": "claude-sonnet-4-5-20250929",
+  "date": "2026-03-12T01:23:58.689Z",
+  "totalPassed": 5,
+  "totalFailed": 0,
+  "results": [
+    {
+      "id": "macwhisper",
+      "pass": true,
+      "checks": [
+        {
+          "name": "Has name",
+          "pass": true
+        },
+        {
+          "name": "Has nodes",
+          "pass": true
+        },
+        {
+          "name": "Has connections",
+          "pass": true
+        },
+        {
+          "name": "Has settings",
+          "pass": true
+        },
+        {
+          "name": "Node count >= 8",
+          "pass": true,
+          "detail": "got 9, original has 9"
+        },
+        {
+          "name": "Has 1x webhook",
+          "pass": true,
+          "detail": "got 1"
+        },
+        {
+          "name": "Has 3x googleGemini",
+          "pass": true,
+          "detail": "got 3"
+        },
+        {
+          "name": "Has 1x code",
+          "pass": true,
+          "detail": "got 1"
+        },
+        {
+          "name": "Has 2x convertToFile",
+          "pass": true,
+          "detail": "got 2"
+        },
+        {
+          "name": "Has 1x set",
+          "pass": true,
+          "detail": "got 1"
+        },
+        {
+          "name": "Has 1x gmail",
+          "pass": true,
+          "detail": "got 1"
+        },
+        {
+          "name": "Has trigger node",
+          "pass": true
+        },
+        {
+          "name": "All nodes have id/name/type/position",
+          "pass": true
+        },
+        {
+          "name": "All node names unique",
+          "pass": true
+        },
+        {
+          "name": "All connections reference valid nodes",
+          "pass": true
+        },
+        {
+          "name": "Settings has executionOrder v1",
+          "pass": true
+        },
+        {
+          "name": "Passes workflow-validator",
+          "pass": true,
+          "detail": null
+        }
+      ]
+    },
+    {
+      "id": "supabase-plugin",
+      "pass": true,
+      "checks": [
+        {
+          "name": "Has name",
+          "pass": true
+        },
+        {
+          "name": "Has nodes",
+          "pass": true
+        },
+        {
+          "name": "Has connections",
+          "pass": true
+        },
+        {
+          "name": "Has settings",
+          "pass": true
+        },
+        {
+          "name": "Node count >= 11",
+          "pass": true,
+          "detail": "got 11, original has 13"
+        },
+        {
+          "name": "Has 1x webhook",
+          "pass": true,
+          "detail": "got 1"
+        },
+        {
+          "name": "Has 4x if",
+          "pass": true,
+          "detail": "got 4"
+        },
+        {
+          "name": "Has 2x httpRequest",
+          "pass": true,
+          "detail": "got 2"
+        },
+        {
+          "name": "Has 4x getResponse",
+          "pass": true,
+          "detail": "got 4"
+        },
+        {
+          "name": "Has trigger node",
+          "pass": true
+        },
+        {
+          "name": "All nodes have id/name/type/position",
+          "pass": true
+        },
+        {
+          "name": "All node names unique",
+          "pass": true
+        },
+        {
+          "name": "All connections reference valid nodes",
+          "pass": true
+        },
+        {
+          "name": "Settings has executionOrder v1",
+          "pass": true
+        },
+        {
+          "name": "Passes workflow-validator",
+          "pass": true,
+          "detail": null
+        }
+      ]
+    },
+    {
+      "id": "inoreader-ai",
+      "pass": true,
+      "checks": [
+        {
+          "name": "Has name",
+          "pass": true
+        },
+        {
+          "name": "Has nodes",
+          "pass": true
+        },
+        {
+          "name": "Has connections",
+          "pass": true
+        },
+        {
+          "name": "Has settings",
+          "pass": true
+        },
+        {
+          "name": "Node count >= 13",
+          "pass": true,
+          "detail": "got 14, original has 27"
+        },
+        {
+          "name": "Has 1x rssFeedReadTrigger",
+          "pass": true,
+          "detail": "got 1"
+        },
+        {
+          "name": "Has 3x httpRequest",
+          "pass": true,
+          "detail": "got 3"
+        },
+        {
+          "name": "Has 1x html",
+          "pass": true,
+          "detail": "got 1"
+        },
+        {
+          "name": "Has 4x openAi",
+          "pass": true,
+          "detail": "got 4"
+        },
+        {
+          "name": "Has 1x filter",
+          "pass": true,
+          "detail": "got 1"
+        },
+        {
+          "name": "Has 3x code",
+          "pass": true,
+          "detail": "got 3"
+        },
+        {
+          "name": "Has 1x telegram",
+          "pass": true,
+          "detail": "got 1"
+        },
+        {
+          "name": "Has trigger node",
+          "pass": true
+        },
+        {
+          "name": "All nodes have id/name/type/position",
+          "pass": true
+        },
+        {
+          "name": "All node names unique",
+          "pass": true
+        },
+        {
+          "name": "All connections reference valid nodes",
+          "pass": true
+        },
+        {
+          "name": "Settings has executionOrder v1",
+          "pass": true
+        },
+        {
+          "name": "Passes workflow-validator",
+          "pass": true,
+          "detail": null
+        }
+      ]
+    },
+    {
+      "id": "inoreader-telegram",
+      "pass": true,
+      "checks": [
+        {
+          "name": "Has name",
+          "pass": true
+        },
+        {
+          "name": "Has nodes",
+          "pass": true
+        },
+        {
+          "name": "Has connections",
+          "pass": true
+        },
+        {
+          "name": "Has settings",
+          "pass": true
+        },
+        {
+          "name": "Node count >= 9",
+          "pass": true,
+          "detail": "got 9, original has 17"
+        },
+        {
+          "name": "Has 1x rssFeedReadTrigger",
+          "pass": true,
+          "detail": "got 1"
+        },
+        {
+          "name": "Has 1x html",
+          "pass": true,
+          "detail": "got 1"
+        },
+        {
+          "name": "Has 3x code",
+          "pass": true,
+          "detail": "got 3"
+        },
+        {
+          "name": "Has 1x if",
+          "pass": true,
+          "detail": "got 1"
+        },
+        {
+          "name": "Has 3x telegram",
+          "pass": true,
+          "detail": "got 3"
+        },
+        {
+          "name": "Has trigger node",
+          "pass": true
+        },
+        {
+          "name": "All nodes have id/name/type/position",
+          "pass": true
+        },
+        {
+          "name": "All node names unique",
+          "pass": true
+        },
+        {
+          "name": "All connections reference valid nodes",
+          "pass": true
+        },
+        {
+          "name": "Settings has executionOrder v1",
+          "pass": true
+        },
+        {
+          "name": "Passes workflow-validator",
+          "pass": true,
+          "detail": null
+        }
+      ]
+    },
+    {
+      "id": "twitter-ai-feed",
+      "pass": true,
+      "checks": [
+        {
+          "name": "Has name",
+          "pass": true
+        },
+        {
+          "name": "Has nodes",
+          "pass": true
+        },
+        {
+          "name": "Has connections",
+          "pass": true
+        },
+        {
+          "name": "Has settings",
+          "pass": true
+        },
+        {
+          "name": "Node count >= 9",
+          "pass": true,
+          "detail": "got 9, original has 17"
+        },
+        {
+          "name": "Has 1x rssFeedReadTrigger",
+          "pass": true,
+          "detail": "got 1"
+        },
+        {
+          "name": "Has 3x filter",
+          "pass": true,
+          "detail": "got 3"
+        },
+        {
+          "name": "Has 2x code",
+          "pass": true,
+          "detail": "got 2"
+        },
+        {
+          "name": "Has 2x openAi",
+          "pass": true,
+          "detail": "got 2"
+        },
+        {
+          "name": "Has 1x telegram",
+          "pass": true,
+          "detail": "got 1"
+        },
+        {
+          "name": "Has trigger node",
+          "pass": true
+        },
+        {
+          "name": "All nodes have id/name/type/position",
+          "pass": true
+        },
+        {
+          "name": "All node names unique",
+          "pass": true
+        },
+        {
+          "name": "All connections reference valid nodes",
+          "pass": true
+        },
+        {
+          "name": "Settings has executionOrder v1",
+          "pass": true
+        },
+        {
+          "name": "Passes workflow-validator",
+          "pass": true,
+          "detail": null
+        }
+      ]
+    }
+  ]
+}

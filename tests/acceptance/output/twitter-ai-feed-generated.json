@@ -1,0 +1,309 @@
+{
+  "name": "Twitter AI Feed Translator",
+  "nodes": [
+    {
+      "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "name": "RSS Feed Trigger",
+      "type": "n8n-nodes-base.rssFeedReadTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "parameters": {
+        "feedUrl": "https://rss.app/feeds/your-feed-url.xml",
+        "pollInterval": 15
+      }
+    },
+    {
+      "id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+      "name": "Filter Retweets",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        550,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
+              "leftValue": "={{ $json.title }}",
+              "rightValue": "RT @",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
+      "name": "Filter Mentions",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        550,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b",
+              "leftValue": "={{ $json.title }}",
+              "rightValue": "@",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8a9b0c",
+      "name": "Filter Original Tweets",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        550,
+        500
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "a7b8c9d0-e1f2-4a3b-4c5d-6e7f8a9b0c1d",
+              "leftValue": "={{ $json.title }}",
+              "rightValue": "@",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            },
+            {
+              "id": "b8c9d0e1-f2a3-4b4c-5d6e-7f8a9b0c1d2e",
+              "leftValue": "={{ $json.title }}",
+              "rightValue": "RT @",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c9d0e1f2-a3b4-4c5d-6e7f-8a9b0c1d2e3f",
+      "name": "Clean Junk",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        500
+      ],
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfor (const item of items) {\n  let text = item.json.title || '';\n  \n  // Remove common junk patterns\n  text = text.replace(/\\s+/g, ' ').trim();\n  text = text.replace(/[\\u200B-\\u200D\\uFEFF]/g, ''); // Zero-width characters\n  text = text.replace(/&amp;/g, '&');\n  text = text.replace(/&lt;/g, '<');\n  text = text.replace(/&gt;/g, '>');\n  text = text.replace(/&quot;/g, '\"');\n  \n  item.json.cleanedTitle = text;\n}\n\nreturn items;"
+      }
+    },
+    {
+      "id": "d0e1f2a3-b4c5-4d6e-7f8a-9b0c1d2e3f4a",
+      "name": "Clean Links",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1150,
+        500
+      ],
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfor (const item of items) {\n  let text = item.json.cleanedTitle || item.json.title || '';\n  \n  // Remove cc: references\n  text = text.replace(/\\s*cc:\\s*https?:\\/\\/\\S+/gi, '');\n  \n  // Remove pic.twitter.com references\n  text = text.replace(/\\s*pic\\.twitter\\.com\\/\\S+/gi, '');\n  \n  // Remove t.co links\n  text = text.replace(/\\s*https?:\\/\\/t\\.co\\/\\S+/gi, '');\n  \n  // Clean up extra spaces\n  text = text.replace(/\\s+/g, ' ').trim();\n  \n  item.json.finalText = text;\n}\n\nreturn items;"
+      }
+    },
+    {
+      "id": "e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a5b",
+      "name": "Translate",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [
+        1450,
+        500
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "chatgpt-4o-latest",
+          "mode": "list",
+          "cachedResultName": "chatgpt-4o-latest"
+        },
+        "options": {
+          "systemMessage": "You are a professional translator. Translate the following tweet text from English to Russian. Preserve the meaning, tone, and any technical terms. Return ONLY the translated text without any explanations or additional commentary."
+        },
+        "prompt": "={{ $json.finalText }}"
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "1",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "id": "f2a3b4c5-d6e7-4f8a-9b0c-1d2e3f4a5b6c",
+      "name": "Commentary",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [
+        1750,
+        500
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "chatgpt-4o-latest",
+          "mode": "list",
+          "cachedResultName": "chatgpt-4o-latest"
+        },
+        "options": {
+          "systemMessage": "You are an AI analyst and technology expert. Analyze the following tweet and provide a brief, insightful commentary in Russian about its significance, implications, or context in the AI/tech industry. Keep it concise (2-3 sentences) and informative."
+        },
+        "prompt": "={{ $json.finalText }}"
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "1",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "id": "a3b4c5d6-e7f8-4a9b-0c1d-2e3f4a5b6c7d",
+      "name": "Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2050,
+        500
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "196267257",
+        "text": "=<b>Оригинальный твит (перевод):</b>\n{{ $('Translate').item.json.text }}\n\n<b>📊 Анализ:</b>\n{{ $('Commentary').item.json.text }}\n\n<b>🔗 Ссылка:</b>\n{{ $('RSS Feed Trigger').item.json.link }}",
+        "additionalFields": {
+          "parseMode": "HTML"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "RSS Feed Trigger": {
+      "main": [
+        [
+          {
+            "node": "Filter Retweets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Filter Mentions",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Filter Original Tweets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Original Tweets": {
+      "main": [
+        [
+          {
+            "node": "Clean Junk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Junk": {
+      "main": [
+        [
+          {
+            "node": "Clean Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Links": {
+      "main": [
+        [
+          {
+            "node": "Translate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Translate": {
+      "main": [
+        [
+          {
+            "node": "Commentary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Commentary": {
+      "main": [
+        [
+          {
+            "node": "Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

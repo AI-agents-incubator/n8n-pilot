@@ -342,7 +342,7 @@ describe('workflow-validator', () => {
         expect(typeof normalized.nodes[0].parameters).toBe('object');
       });
 
-      it('sets default typeVersion to 1', () => {
+      it('sets correct typeVersion for known node types', () => {
         const workflow = {
           nodes: [
             { id: '1', name: 'Node1', type: 'n8n-nodes-base.webhook' },
@@ -351,24 +351,36 @@ describe('workflow-validator', () => {
         };
 
         const normalized = normalize(workflow);
+        expect(normalized.nodes[0].typeVersion).toBe(2.1);
+      });
+
+      it('sets default typeVersion to 1 for unknown node types', () => {
+        const workflow = {
+          nodes: [
+            { id: '1', name: 'Node1', type: 'n8n-nodes-base.unknownNode' },
+          ],
+          connections: {},
+        };
+
+        const normalized = normalize(workflow);
         expect(normalized.nodes[0].typeVersion).toBe(1);
       });
 
-      it('preserves existing typeVersion', () => {
+      it('corrects outdated typeVersion to current version', () => {
         const workflow = {
           nodes: [
             {
               id: '1',
               name: 'Node1',
               type: 'n8n-nodes-base.webhook',
-              typeVersion: 3,
+              typeVersion: 1,
             },
           ],
           connections: {},
         };
 
         const normalized = normalize(workflow);
-        expect(normalized.nodes[0].typeVersion).toBe(3);
+        expect(normalized.nodes[0].typeVersion).toBe(2.1);
       });
     });
 
@@ -640,6 +652,73 @@ describe('workflow-validator', () => {
         normalize(workflow);
 
         expect(workflow).toEqual(original);
+      });
+    });
+
+    describe('model actualization', () => {
+      it('actualizes deprecated OpenAI model in normalize', () => {
+        const workflow = {
+          nodes: [
+            {
+              id: '1',
+              name: 'AI',
+              type: '@n8n/n8n-nodes-langchain.openAi',
+              parameters: {
+                modelId: { __rl: true, value: 'gpt-4o', mode: 'list', cachedResultName: 'GPT-4O' },
+                messages: { values: [{ content: 'test' }] },
+                options: {},
+                simplify: false,
+              },
+            },
+          ],
+          connections: {},
+        };
+
+        const normalized = normalize(workflow);
+        expect(normalized.nodes[0].parameters.modelId.value).toBe('gpt-4.1-nano');
+      });
+
+      it('actualizes deprecated Gemini model in normalize', () => {
+        const workflow = {
+          nodes: [
+            {
+              id: '1',
+              name: 'Gemini',
+              type: '@n8n/n8n-nodes-langchain.googleGemini',
+              parameters: {
+                modelId: { __rl: true, value: 'gemini-2.0-flash-exp', mode: 'list', cachedResultName: 'gemini-2.0-flash-exp' },
+                messages: { values: [{ content: 'test' }] },
+                options: {},
+              },
+            },
+          ],
+          connections: {},
+        };
+
+        const normalized = normalize(workflow);
+        expect(normalized.nodes[0].parameters.modelId.value).toBe('models/gemini-2.5-flash');
+      });
+
+      it('leaves current models unchanged in normalize', () => {
+        const workflow = {
+          nodes: [
+            {
+              id: '1',
+              name: 'AI',
+              type: '@n8n/n8n-nodes-langchain.openAi',
+              parameters: {
+                modelId: { __rl: true, value: 'gpt-4.1-nano', mode: 'list', cachedResultName: 'gpt-4.1-nano' },
+                messages: { values: [{ content: 'test' }] },
+                options: {},
+                simplify: false,
+              },
+            },
+          ],
+          connections: {},
+        };
+
+        const normalized = normalize(workflow);
+        expect(normalized.nodes[0].parameters.modelId.value).toBe('gpt-4.1-nano');
       });
     });
 

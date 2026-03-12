@@ -84,6 +84,78 @@ describe('prompt-analyzer', () => {
       const bp = analyzer.analyze('Fetch data from API, filter results, send via Telegram');
       expect(bp.nodes.length).toBeGreaterThanOrEqual(3);
     });
+
+    // --- Additional platform detection tests ---
+
+    it('should detect Slack', () => {
+      const bp = analyzer.analyze('Send a Slack message to the team channel');
+      expect(bp.nodes.some(n => n.type === 'n8n-nodes-base.slack')).toBe(true);
+    });
+
+    it('should detect Discord', () => {
+      const bp = analyzer.analyze('Post a notification to Discord');
+      expect(bp.nodes.some(n => n.type === 'n8n-nodes-base.discord')).toBe(true);
+    });
+
+    it('should detect HubSpot', () => {
+      const bp = analyzer.analyze('Update contacts in HubSpot CRM');
+      expect(bp.nodes.some(n => n.type === 'n8n-nodes-base.hubspot')).toBe(true);
+    });
+
+    it('should detect Trello', () => {
+      const bp = analyzer.analyze('Create a card in Trello board');
+      expect(bp.nodes.some(n => n.type === 'n8n-nodes-base.trello')).toBe(true);
+    });
+
+    it('should detect Supabase', () => {
+      const bp = analyzer.analyze('Insert data into Supabase table');
+      expect(bp.nodes.some(n => n.type === 'n8n-nodes-base.supabase')).toBe(true);
+    });
+
+    it('should detect Stripe', () => {
+      const bp = analyzer.analyze('Process a Stripe payment webhook');
+      expect(bp.nodes.some(n => n.type === 'n8n-nodes-base.stripe')).toBe(true);
+    });
+
+    it('should detect Twitter', () => {
+      const bp = analyzer.analyze('Post a tweet on Twitter');
+      expect(bp.nodes.some(n => n.type === 'n8n-nodes-base.twitter')).toBe(true);
+    });
+
+    it('should detect WhatsApp', () => {
+      const bp = analyzer.analyze('Send a WhatsApp notification');
+      expect(bp.nodes.some(n => n.type === 'n8n-nodes-base.whatsApp')).toBe(true);
+    });
+
+    it('should detect Shopify', () => {
+      const bp = analyzer.analyze('Get new Shopify orders');
+      expect(bp.nodes.some(n => n.type === 'n8n-nodes-base.shopify')).toBe(true);
+    });
+
+    it('should detect Ollama', () => {
+      const bp = analyzer.analyze('Use Ollama local LLM for text generation');
+      expect(bp.nodes.some(n => n.type === '@n8n/n8n-nodes-langchain.ollama')).toBe(true);
+    });
+
+    it('should detect AWS S3', () => {
+      const bp = analyzer.analyze('Upload file to AWS S3 bucket');
+      expect(bp.nodes.some(n => n.type === 'n8n-nodes-base.awsS3')).toBe(true);
+    });
+
+    it('should detect Google Calendar', () => {
+      const bp = analyzer.analyze('Create an event in Google Calendar');
+      expect(bp.nodes.some(n => n.type === 'n8n-nodes-base.googleCalendar')).toBe(true);
+    });
+
+    it('should detect Postgres', () => {
+      const bp = analyzer.analyze('Query data from PostgreSQL database');
+      expect(bp.nodes.some(n => n.type === 'n8n-nodes-base.postgres')).toBe(true);
+    });
+
+    it('should detect Redis', () => {
+      const bp = analyzer.analyze('Cache results in Redis');
+      expect(bp.nodes.some(n => n.type === 'n8n-nodes-base.redis')).toBe(true);
+    });
   });
 
   describe('blueprint metadata', () => {

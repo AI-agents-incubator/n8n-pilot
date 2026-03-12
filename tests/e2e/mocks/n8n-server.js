@@ -1,10 +1,14 @@
 /**
  * Mock n8n REST API server for E2E tests.
  * Runs on localhost:5678.
+ * Serves a fake n8n UI page + REST API endpoints.
  */
 
 import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json());
 
@@ -64,6 +68,87 @@ let tags = [
 let credentials = [
   { id: 'cred-001', name: 'HTTP Basic Auth', type: 'httpBasicAuth', createdAt: '2026-01-01T00:00:00Z' },
 ];
+
+// --- Fake n8n UI pages ---
+
+const N8N_PAGE_HTML = `<!DOCTYPE html>
+<html lang="en" data-n8n-pilot-test-mode="true">
+<head>
+  <meta charset="UTF-8">
+  <title>n8n — Workflow Automation</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; }
+    #app { min-height: 100vh; display: flex; }
+    .sidebar { width: 64px; background: #16162a; border-right: 1px solid #333; padding: 16px 8px; }
+    .main-content { flex: 1; padding: 24px; transition: margin-right 0.3s; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    h1 { font-size: 20px; font-weight: 600; }
+    .workflow-list { display: grid; gap: 12px; }
+    .workflow-card { background: #222244; border: 1px solid #333; border-radius: 8px; padding: 16px; cursor: pointer; }
+    .workflow-card:hover { border-color: #ff6d5a; }
+    .workflow-card h3 { font-size: 14px; margin-bottom: 4px; }
+    .workflow-card .meta { font-size: 12px; color: #888; }
+    .badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; }
+    .badge.active { background: #1b5e20; color: #4caf50; }
+    .badge.inactive { background: #333; color: #888; }
+  </style>
+  <script>window.__N8N_PILOT_TEST_MODE__ = true;</script>
+</head>
+<body>
+  <div id="app">
+    <div class="sidebar">
+      <div style="width:32px;height:32px;background:#ff6d5a;border-radius:8px;margin:0 auto;"></div>
+    </div>
+    <div class="main-content">
+      <div class="header">
+        <h1>Workflows</h1>
+        <button class="btn" data-test-id="new-workflow">+ New Workflow</button>
+      </div>
+      <div class="workflow-list" id="workflowList"></div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+const N8N_WORKFLOW_PAGE_HTML = (id) => `<!DOCTYPE html>
+<html lang="en" data-n8n-pilot-test-mode="true">
+<head>
+  <meta charset="UTF-8">
+  <title>n8n — Workflow Editor</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; }
+    #app { min-height: 100vh; display: flex; }
+    .main-content { flex: 1; transition: margin-right 0.3s; }
+    .toolbar { height: 48px; background: #16162a; border-bottom: 1px solid #333; display: flex; align-items: center; padding: 0 16px; gap: 12px; }
+    .toolbar input[data-test-id="workflow-name-input"] { background: transparent; border: none; color: #fff; font-size: 14px; font-weight: 600; }
+    .toolbar button { background: #ff6d5a; color: #fff; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; }
+    .canvas { flex: 1; height: calc(100vh - 48px); background: #0d0d1a; position: relative; }
+    .canvas .placeholder { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #555; font-size: 14px; }
+  </style>
+  <script>window.__N8N_PILOT_TEST_MODE__ = true;</script>
+</head>
+<body>
+  <div id="app">
+    <div class="main-content">
+      <div class="toolbar">
+        <input data-test-id="workflow-name-input" value="Test Workflow ${id}">
+        <button data-test-id="save-workflow">Save</button>
+      </div>
+      <div class="canvas" data-test-id="canvas" id="canvas">
+        <div class="placeholder">Canvas — workflow ${id}</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+// Serve n8n pages
+app.get('/', (req, res) => res.type('html').send(N8N_PAGE_HTML));
+app.get('/home', (req, res) => res.type('html').send(N8N_PAGE_HTML));
+app.get('/home/workflows', (req, res) => res.type('html').send(N8N_PAGE_HTML));
+app.get('/workflow/:id', (req, res) => res.type('html').send(N8N_WORKFLOW_PAGE_HTML(req.params.id)));
 
 // Auth middleware
 function auth(req, res, next) {

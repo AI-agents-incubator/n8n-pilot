@@ -1,0 +1,435 @@
+{
+  "name": "AI News RSS Pipeline",
+  "nodes": [
+    {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "RSS Feed Trigger",
+      "type": "n8n-nodes-base.rssFeedReadTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "parameters": {
+        "feedUrl": "https://www.inoreader.com/stream/user/1004901627/tag/AI"
+      }
+    },
+    {
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "HTTP Request Fetch Article",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        550,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.link }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "name": "HTML Extract",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        850,
+        300
+      ],
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "options": {}
+      }
+    },
+    {
+      "id": "d4e5f6a7-b8c9-0123-def1-234567890123",
+      "name": "OpenAI Garbage Filter",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [
+        1150,
+        300
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4.1-nano",
+          "mode": "list",
+          "cachedResultName": "gpt-4.1-nano"
+        },
+        "options": {
+          "systemMessage": "Analyze the following article content and determine if it is genuinely related to artificial intelligence, machine learning, or AI technology, and is not spam or unrelated content. If it is valid AI-related content, respond with exactly 'aicontent'. If it is spam or not AI-related, respond with 'invalid'."
+        },
+        "prompt": "={{ $json.text }}"
+      }
+    },
+    {
+      "id": "e5f6a7b8-c9d0-1234-ef12-345678901234",
+      "name": "Filter Valid AI Content",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        1450,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "f6a7b8c9-d0e1-2345-f123-456789012345",
+              "leftValue": "={{ $json.message.content }}",
+              "rightValue": "aicontent",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a7b8c9d0-e1f2-3456-1234-567890123456",
+      "name": "OpenAI Translate to Russian",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [
+        1750,
+        300
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "options": {
+          "systemMessage": "You are a professional translator. Translate the following article from English to Russian. Maintain the original meaning, tone, and technical accuracy. Provide only the translation without any additional commentary."
+        },
+        "prompt": "={{ $('HTML Extract').item.json.text }}"
+      }
+    },
+    {
+      "id": "b8c9d0e1-f2a3-4567-2345-678901234567",
+      "name": "OpenAI Generate Announcement",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [
+        2050,
+        300
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4.1-nano",
+          "mode": "list",
+          "cachedResultName": "gpt-4.1-nano"
+        },
+        "options": {
+          "systemMessage": "Create a short, engaging announcement or teaser (2-3 sentences) for the following article. Make it compelling and informative. Write in Russian."
+        },
+        "prompt": "={{ $json.message.content }}"
+      }
+    },
+    {
+      "id": "c9d0e1f2-a3b4-5678-3456-789012345678",
+      "name": "OpenAI Generate Summary",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [
+        2350,
+        300
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4.1-nano",
+          "mode": "list",
+          "cachedResultName": "gpt-4.1-nano"
+        },
+        "options": {
+          "systemMessage": "Create a detailed summary of the following article. Include key points, important details, and main takeaways. Write in Russian. Make it comprehensive but concise."
+        },
+        "prompt": "={{ $('OpenAI Translate to Russian').item.json.message.content }}"
+      }
+    },
+    {
+      "id": "d0e1f2a3-b4c5-6789-4567-890123456789",
+      "name": "Code Split Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2650,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const maxLength = 60000;\nconst translatedText = $('OpenAI Translate to Russian').item.json.message.content;\nconst chunks = [];\n\nif (translatedText.length <= maxLength) {\n  chunks.push(translatedText);\n} else {\n  let start = 0;\n  while (start < translatedText.length) {\n    let end = start + maxLength;\n    if (end < translatedText.length) {\n      const lastPeriod = translatedText.lastIndexOf('.', end);\n      const lastNewline = translatedText.lastIndexOf('\\n', end);\n      end = Math.max(lastPeriod, lastNewline);\n      if (end <= start) end = start + maxLength;\n    }\n    chunks.push(translatedText.substring(start, end));\n    start = end;\n  }\n}\n\nreturn chunks.map((chunk, index) => ({\n  json: {\n    chunk: chunk,\n    chunkIndex: index,\n    totalChunks: chunks.length,\n    announcement: $('OpenAI Generate Announcement').item.json.message.content,\n    summary: $('OpenAI Generate Summary').item.json.message.content,\n    originalLink: $('RSS Feed Trigger').item.json.link,\n    title: $('RSS Feed Trigger').item.json.title\n  }\n}));"
+      }
+    },
+    {
+      "id": "e1f2a3b4-c5d6-7890-5678-901234567890",
+      "name": "Code Format for Telegraph",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2950,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const content = $json.chunk;\nconst paragraphs = content.split('\\n').filter(p => p.trim().length > 0);\nconst telegraphContent = paragraphs.map(p => ({\n  tag: 'p',\n  children: [p.trim()]\n}));\n\nreturn {\n  json: {\n    ...($input.item.json),\n    telegraphContent: JSON.stringify(telegraphContent)\n  }\n};"
+      }
+    },
+    {
+      "id": "f2a3b4c5-d6e7-8901-6789-012345678901",
+      "name": "HTTP Get Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3250,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegra.ph/createAccount",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "short_name",
+              "value": "AI News Bot"
+            },
+            {
+              "name": "author_name",
+              "value": "AI News Pipeline"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a3b4c5d6-e7f8-9012-7890-123456789012",
+      "name": "HTTP Publish",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3550,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegra.ph/createPage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('HTTP Get Token').item.json.result.access_token }}"
+            },
+            {
+              "name": "title",
+              "value": "={{ $('Code Split Text').item.json.title }}"
+            },
+            {
+              "name": "content",
+              "value": "={{ $('Code Format for Telegraph').item.json.telegraphContent }}"
+            },
+            {
+              "name": "return_content",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b4c5d6e7-f8a9-0123-8901-234567890123",
+      "name": "Code Calculate Cost",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3850,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const gpt4oInputTokens = $('OpenAI Translate to Russian').item.json.usage?.prompt_tokens || 0;\nconst gpt4oOutputTokens = $('OpenAI Translate to Russian').item.json.usage?.completion_tokens || 0;\n\nconst garbageFilterInputTokens = $('OpenAI Garbage Filter').item.json.usage?.prompt_tokens || 0;\nconst garbageFilterOutputTokens = $('OpenAI Garbage Filter').item.json.usage?.completion_tokens || 0;\n\nconst announcementInputTokens = $('OpenAI Generate Announcement').item.json.usage?.prompt_tokens || 0;\nconst announcementOutputTokens = $('OpenAI Generate Announcement').item.json.usage?.completion_tokens || 0;\n\nconst summaryInputTokens = $('OpenAI Generate Summary').item.json.usage?.prompt_tokens || 0;\nconst summaryOutputTokens = $('OpenAI Generate Summary').item.json.usage?.completion_tokens || 0;\n\nconst gpt4oCostInput = (gpt4oInputTokens / 1000000) * 2.50;\nconst gpt4oCostOutput = (gpt4oOutputTokens / 1000000) * 10.00;\nconst gpt4oCost = gpt4oCostInput + gpt4oCostOutput;\n\nconst gpt41nanoCostInput = ((garbageFilterInputTokens + announcementInputTokens + summaryInputTokens) / 1000000) * 0.10;\nconst gpt41nanoCostOutput = ((garbageFilterOutputTokens + announcementOutputTokens + summaryOutputTokens) / 1000000) * 0.40;\nconst gpt41nanoCost = gpt41nanoCostInput + gpt41nanoCostOutput;\n\nconst totalCost = gpt4oCost + gpt41nanoCost;\n\nreturn {\n  json: {\n    ...($input.item.json),\n    announcement: $('Code Split Text').item.json.announcement,\n    summary: $('Code Split Text').item.json.summary,\n    telegraphUrl: $json.result.url,\n    costs: {\n      gpt4o: `$${gpt4oCost.toFixed(6)}`,\n      gpt41nano: `$${gpt41nanoCost.toFixed(6)}`,\n      total: `$${totalCost.toFixed(6)}`\n    },\n    tokens: {\n      gpt4o: { input: gpt4oInputTokens, output: gpt4oOutputTokens },\n      gpt41nano: { input: garbageFilterInputTokens + announcementInputTokens + summaryInputTokens, output: garbageFilterOutputTokens + announcementOutputTokens + summaryOutputTokens }\n    }\n  }\n};"
+      }
+    },
+    {
+      "id": "c5d6e7f8-a9b0-1234-9012-345678901234",
+      "name": "Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        4150,
+        300
+      ],
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "196267257",
+        "text": "=<b>🤖 AI News Update</b>\\n\\n<b>📢 Announcement:</b>\\n{{ $json.announcement }}\\n\\n<b>📝 Summary:</b>\\n{{ $json.summary }}\\n\\n<b>🔗 Read Full Article:</b>\\n{{ $json.telegraphUrl }}\\n\\n<b>💰 Processing Costs:</b>\\n• GPT-4o: {{ $json.costs.gpt4o }}\\n• GPT-4.1-nano: {{ $json.costs.gpt41nano }}\\n• Total: {{ $json.costs.total }}\\n\\n<b>🎯 Tokens Used:</b>\\n• GPT-4o: {{ $json.tokens.gpt4o.input }} in / {{ $json.tokens.gpt4o.output }} out\\n• GPT-4.1-nano: {{ $json.tokens.gpt41nano.input }} in / {{ $json.tokens.gpt41nano.output }} out",
+        "additionalFields": {
+          "parseMode": "HTML"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "RSS Feed Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request Fetch Article",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request Fetch Article": {
+      "main": [
+        [
+          {
+            "node": "HTML Extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML Extract": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Garbage Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Garbage Filter": {
+      "main": [
+        [
+          {
+            "node": "Filter Valid AI Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Valid AI Content": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Translate to Russian",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Translate to Russian": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Generate Announcement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Generate Announcement": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Generate Summary": {
+      "main": [
+        [
+          {
+            "node": "Code Split Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code Split Text": {
+      "main": [
+        [
+          {
+            "node": "Code Format for Telegraph",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code Format for Telegraph": {
+      "main": [
+        [
+          {
+            "node": "HTTP Get Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Get Token": {
+      "main": [
+        [
+          {
+            "node": "HTTP Publish",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Publish": {
+      "main": [
+        [
+          {
+            "node": "Code Calculate Cost",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code Calculate Cost": {
+      "main": [
+        [
+          {
+            "node": "Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

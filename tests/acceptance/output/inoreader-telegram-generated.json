@@ -1,0 +1,263 @@
+{
+  "name": "Telegram Channel RSS Forwarder",
+  "nodes": [
+    {
+      "id": "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d",
+      "name": "RSS Feed Trigger",
+      "type": "n8n-nodes-base.rssFeedReadTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "parameters": {
+        "feedUrl": "https://www.inoreader.com/stream/user/1004901627/tag/AI_Telegram",
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b2c3d4e5-f6a7-4b5c-9d0e-1f2a3b4c5d6e",
+      "name": "Extract Text",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1,
+      "position": [
+        550,
+        300
+      ],
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "dataPropertyName": "content",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "textContent",
+              "cssSelector": "body",
+              "returnValue": "text"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c3d4e5f6-a7b8-4c5d-0e1f-2a3b4c5d6e7f",
+      "name": "Extract Links",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const content = $input.item.json.content || '';\nconst links = {};\nlet imageCounter = 1;\n\n// Extract image URLs\nconst imgRegex = /<img[^>]+src=[\"']([^\"']+)[\"']/gi;\nlet match;\nwhile ((match = imgRegex.exec(content)) !== null) {\n  links[`Image_${imageCounter}`] = match[1];\n  imageCounter++;\n}\n\n// Extract other links\nconst linkRegex = /<a[^>]+href=[\"']([^\"']+)[\"']/gi;\nconst otherLinks = [];\nwhile ((match = linkRegex.exec(content)) !== null) {\n  otherLinks.push(match[1]);\n}\n\nif (otherLinks.length > 0) {\n  links.otherLinks = otherLinks;\n}\n\nreturn {\n  ...($input.item.json),\n  extractedLinks: links\n};"
+      }
+    },
+    {
+      "id": "d4e5f6a7-b8c9-4d5e-1f2a-3b4c5d6e7f8a",
+      "name": "Remove Thumbnails",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1150,
+        300
+      ],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const data = $input.item.json;\nconst extractedLinks = data.extractedLinks || {};\nconst cleanedLinks = {};\n\n// Remove thumbnail references\nfor (const [key, value] of Object.entries(extractedLinks)) {\n  if (typeof value === 'string' && !value.includes('thumb.jpeg') && !value.includes('thumbnail')) {\n    cleanedLinks[key] = value;\n  } else if (Array.isArray(value)) {\n    const filtered = value.filter(link => !link.includes('thumb.jpeg') && !link.includes('thumbnail'));\n    if (filtered.length > 0) {\n      cleanedLinks[key] = filtered;\n    }\n  }\n}\n\nreturn {\n  ...data,\n  extractedLinks: cleanedLinks\n};"
+      }
+    },
+    {
+      "id": "e5f6a7b8-c9d0-4e5f-2a3b-4c5d6e7f8a9b",
+      "name": "Clean Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1450,
+        300
+      ],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const data = $input.item.json;\nlet text = data.textContent || data.content || '';\n\n// Remove HTML tags\ntext = text.replace(/<[^>]*>/g, '');\n\n// Decode HTML entities\ntext = text.replace(/&nbsp;/g, ' ');\ntext = text.replace(/&quot;/g, '\"');\ntext = text.replace(/&apos;/g, \"'\");\ntext = text.replace(/&lt;/g, '<');\ntext = text.replace(/&gt;/g, '>');\ntext = text.replace(/&amp;/g, '&');\n\n// Remove extra whitespace\ntext = text.replace(/\\s+/g, ' ').trim();\n\n// Remove multiple newlines\ntext = text.replace(/\\n\\s*\\n/g, '\\n\\n');\n\nreturn {\n  ...data,\n  cleanedText: text\n};"
+      }
+    },
+    {
+      "id": "f6a7b8c9-d0e1-4f5a-3b4c-5d6e7f8a9b0c",
+      "name": "IF",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d",
+              "leftValue": "={{ $json.extractedLinks.Image_1 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a7b8c9d0-e1f2-4a5b-4c5d-6e7f8a9b0c1d",
+      "name": "Send Photo",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2050,
+        200
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendPhoto",
+        "chatId": "196267257",
+        "binaryData": false,
+        "photo": "={{ $json.extractedLinks.Image_1 }}",
+        "additionalFields": {}
+      }
+    },
+    {
+      "id": "b8c9d0e1-f2a3-4b5c-5d6e-7f8a9b0c1d2e",
+      "name": "Send Text",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2350,
+        200
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "196267257",
+        "text": "={{ $json.cleanedText }}",
+        "additionalFields": {}
+      }
+    },
+    {
+      "id": "c9d0e1f2-a3b4-4c5d-6e7f-8a9b0c1d2e3f",
+      "name": "Send Text Only",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2050,
+        400
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "196267257",
+        "text": "={{ $json.cleanedText }}",
+        "additionalFields": {}
+      }
+    }
+  ],
+  "connections": {
+    "RSS Feed Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text": {
+      "main": [
+        [
+          {
+            "node": "Extract Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Links": {
+      "main": [
+        [
+          {
+            "node": "Remove Thumbnails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove Thumbnails": {
+      "main": [
+        [
+          {
+            "node": "Clean Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Text": {
+      "main": [
+        [
+          {
+            "node": "IF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF": {
+      "main": [
+        [
+          {
+            "node": "Send Photo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Text Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Photo": {
+      "main": [
+        [
+          {
+            "node": "Send Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

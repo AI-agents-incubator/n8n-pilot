@@ -1,0 +1,388 @@
+{
+  "name": "Membership Webhook Router",
+  "nodes": [
+    {
+      "id": "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "membership-webhook",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "membership-purchase",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "b2c3d4e5-f6a7-4b5c-9d0e-1f2a3b4c5d6e",
+      "name": "Check ChatGPT Course",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        550,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "c3d4e5f6-a7b8-4c5d-0e1f-2a3b4c5d6e7f",
+              "leftValue": "={{ $json.body.data.membership.id }}",
+              "rightValue": "143102",
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
+      "name": "Check Vibe Course",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        550,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b",
+              "leftValue": "={{ $json.body.data.membership.id }}",
+              "rightValue": "157990",
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8a9b0c",
+      "name": "Get ChatGPT Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        850,
+        200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.getresponse.com/v3/contacts",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query[email]",
+              "value": "={{ $json.body.data.member.email }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Auth-Token",
+              "value": "={{$credentials.apiKey}}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a7b8c9d0-e1f2-4a3b-4c5d-6e7f8a9b0c1d",
+      "name": "Get Vibe Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        850,
+        400
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.getresponse.com/v3/contacts",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query[email]",
+              "value": "={{ $json.body.data.member.email }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Auth-Token",
+              "value": "={{$credentials.apiKey}}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b8c9d0e1-f2a3-4b4c-5d6e-7f8a9b0c1d2e",
+      "name": "ChatGPT Contact Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1150,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "c9d0e1f2-a3b4-4c5d-6e7f-8a9b0c1d2e3f",
+              "leftValue": "={{ $json[0]?.contactId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d0e1f2a3-b4c5-4d6e-7f8a-9b0c1d2e3f4a",
+      "name": "Vibe Contact Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1150,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a5b",
+              "leftValue": "={{ $json[0]?.contactId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f2a3b4c5-d6e7-4f8a-9b0c-1d2e3f4a5b6c",
+      "name": "Update ChatGPT Contact",
+      "type": "n8n-nodes-base.getResponse",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        100
+      ],
+      "parameters": {
+        "operation": "update",
+        "contactId": "={{ $json[0].contactId }}",
+        "updateFields": {
+          "tags": "pmC6T"
+        }
+      }
+    },
+    {
+      "id": "a3b4c5d6-e7f8-4a9b-0c1d-2e3f4a5b6c7d",
+      "name": "Create ChatGPT Contact",
+      "type": "n8n-nodes-base.getResponse",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        300
+      ],
+      "parameters": {
+        "operation": "create",
+        "campaignId": "GDPGC",
+        "email": "={{ $('Webhook').item.json.body.data.member.email }}",
+        "additionalFields": {
+          "tags": "pmC6T"
+        }
+      }
+    },
+    {
+      "id": "b4c5d6e7-f8a9-4b0c-1d2e-3f4a5b6c7d8e",
+      "name": "Update Vibe Contact",
+      "type": "n8n-nodes-base.getResponse",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        300
+      ],
+      "parameters": {
+        "operation": "update",
+        "contactId": "={{ $json[0].contactId }}",
+        "updateFields": {
+          "campaignId": "CXmyi",
+          "tags": "TN6JI"
+        }
+      }
+    },
+    {
+      "id": "c5d6e7f8-a9b0-4c1d-2e3f-4a5b6c7d8e9f",
+      "name": "Create Vibe Contact",
+      "type": "n8n-nodes-base.getResponse",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        500
+      ],
+      "parameters": {
+        "operation": "create",
+        "campaignId": "CXmyi",
+        "email": "={{ $('Webhook').item.json.body.data.member.email }}",
+        "additionalFields": {
+          "tags": "TN6JI"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Check ChatGPT Course",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Vibe Course",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check ChatGPT Course": {
+      "main": [
+        [
+          {
+            "node": "Get ChatGPT Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Vibe Course": {
+      "main": [
+        [
+          {
+            "node": "Get Vibe Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get ChatGPT Contact": {
+      "main": [
+        [
+          {
+            "node": "ChatGPT Contact Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Vibe Contact": {
+      "main": [
+        [
+          {
+            "node": "Vibe Contact Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ChatGPT Contact Exists": {
+      "main": [
+        [
+          {
+            "node": "Update ChatGPT Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create ChatGPT Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vibe Contact Exists": {
+      "main": [
+        [
+          {
+            "node": "Update Vibe Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Vibe Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,604 @@
+{
+  "name": "Supabase-plugin",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "4b643ef8-228a-4860-952c-bc297161cdb0",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -624,
+        0
+      ],
+      "id": "72eed22e-f6eb-472e-8778-bfaf39c0ba74",
+      "name": "Webhook",
+      "webhookId": "4b643ef8-228a-4860-952c-bc297161cdb0"
+    },
+    {
+      "parameters": {
+        "url": "https://api.getresponse.com/v3/contacts",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query[email]",
+              "value": "={{ $json.body.data.member.email }}"
+            },
+            {
+              "name": "limit",
+              "value": "1"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Auth-Token",
+              "value": "api-key omls8xh5bwjsa01zch9yjy4yfb465fb3"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        32,
+        0
+      ],
+      "id": "56c51212-b399-4e39-a4bd-bba6f101c820",
+      "name": "HTTP Request",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "contactId": "={{ $json.contactId }}",
+        "updateFields": {
+          "tags": [
+            "pmC6T"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.getResponse",
+      "typeVersion": 1,
+      "position": [
+        576,
+        -112
+      ],
+      "id": "c6a92451-ee01-4060-b432-f084ae40ad4e",
+      "name": "Update a contact",
+      "credentials": {
+        "getResponseApi": {
+          "id": "K74eVEqAEUg5Ke52",
+          "name": "GetResponse account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "email": "={{ $('Webhook').item.json.body.data.member.email }}",
+        "campaignId": "GDPGC",
+        "additionalFields": {
+          "tags": [
+            "pmC6T"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.getResponse",
+      "typeVersion": 1,
+      "position": [
+        640,
+        192
+      ],
+      "id": "f98a591f-6299-4fac-a4cc-e1bf2de4746b",
+      "name": "Create a contact",
+      "credentials": {
+        "getResponseApi": {
+          "id": "K74eVEqAEUg5Ke52",
+          "name": "GetResponse account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c2abc441-076e-4e66-b768-40d44c6c0b7e",
+              "leftValue": "={{ $json.contactId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        272,
+        208
+      ],
+      "id": "38dca840-3f47-4be8-b4a2-39d82cc710dc",
+      "name": "Нет контакта"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c2abc441-076e-4e66-b768-40d44c6c0b7e",
+              "leftValue": "={{ $json.contactId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        272,
+        -96
+      ],
+      "id": "484c4cf2-8166-4ad2-befd-ede8f7ff4a1b",
+      "name": "Есть контакт"
+    },
+    {
+      "parameters": {
+        "url": "https://api.getresponse.com/v3/contacts",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query[email]",
+              "value": "={{ $json.body.data.member.email }}"
+            },
+            {
+              "name": "limit",
+              "value": "1"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Auth-Token",
+              "value": "api-key omls8xh5bwjsa01zch9yjy4yfb465fb3"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        16,
+        -608
+      ],
+      "id": "d589e7c2-4553-4ab2-8f8f-8871093c63b0",
+      "name": "HTTP Request1",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "contactId": "={{ $json.contactId }}",
+        "updateFields": {
+          "campaignId": "CXmyi",
+          "tags": [
+            "TN6JI"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.getResponse",
+      "typeVersion": 1,
+      "position": [
+        560,
+        -720
+      ],
+      "id": "0de588f7-48c5-4f19-87e4-1c64955735be",
+      "name": "Update a contact1",
+      "credentials": {
+        "getResponseApi": {
+          "id": "K74eVEqAEUg5Ke52",
+          "name": "GetResponse account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "email": "={{ $('Webhook').item.json.body.data.member.email }}",
+        "campaignId": "CXmyi",
+        "additionalFields": {
+          "tags": [
+            "TN6JI"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.getResponse",
+      "typeVersion": 1,
+      "position": [
+        560,
+        -416
+      ],
+      "id": "300e6eef-aaef-485b-be7c-f62370da047f",
+      "name": "Create a contact1",
+      "credentials": {
+        "getResponseApi": {
+          "id": "K74eVEqAEUg5Ke52",
+          "name": "GetResponse account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c2abc441-076e-4e66-b768-40d44c6c0b7e",
+              "leftValue": "={{ $json.contactId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        256,
+        -704
+      ],
+      "id": "74005183-6885-49bd-9247-46584e2c9fc3",
+      "name": "Есть контакт1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c2abc441-076e-4e66-b768-40d44c6c0b7e",
+              "leftValue": "={{ $json.body.data.membership.id }}",
+              "rightValue": 157990,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -320,
+        -384
+      ],
+      "id": "816529c6-7a72-4d5a-a89b-c2f056831e69",
+      "name": "157990 Vibe"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c2abc441-076e-4e66-b768-40d44c6c0b7e",
+              "leftValue": "={{ $json.contactId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        256,
+        -400
+      ],
+      "id": "e62c0959-8b88-430c-bb69-54dfdbd23770",
+      "name": "Нет контакта2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c2abc441-076e-4e66-b768-40d44c6c0b7e",
+              "leftValue": "={{ $json.body.data.membership.id }}",
+              "rightValue": 143102,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -304,
+        16
+      ],
+      "id": "a1611684-2978-4738-ae8f-3380fdf568d3",
+      "name": "143102 chatGPT"
+    }
+  ],
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "n8n.srv927837.hstgr.cloud",
+            "user-agent": "WordPress/6.9; https://alexeykrol.com",
+            "content-length": "634",
+            "accept": "*/*",
+            "accept-encoding": "deflate, gzip",
+            "content-type": "application/json",
+            "x-forwarded-for": "45.145.187.249",
+            "x-forwarded-host": "n8n.srv927837.hstgr.cloud",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "2f78f222e2a6",
+            "x-real-ip": "45.145.187.249"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "event": "non-recurring-transaction-completed",
+            "type": "transaction",
+            "data": {
+              "coupon": "0",
+              "subscription": "0",
+              "id": "26868",
+              "amount": "0.00",
+              "total": "0.00",
+              "status": "complete",
+              "txn_type": "payment",
+              "gateway": "free",
+              "created_at": "2026-01-05 08:28:48",
+              "expires_at": "2026-01-15 23:59:59",
+              "membership": {
+                "id": 143102,
+                "title": "Курс бесплатный. Использование chatGPT.",
+                "price": "0.00",
+                "period": "1",
+                "period_type": "lifetime"
+              },
+              "member": {
+                "id": 27297,
+                "email": "nataliturkoman@gmail.com",
+                "first_name": "",
+                "last_name": ""
+              }
+            }
+          },
+          "webhookUrl": "https://n8n.srv927837.hstgr.cloud/webhook/4b643ef8-228a-4860-952c-bc297161cdb0",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "157990 Vibe",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "143102 chatGPT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Есть контакт",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Нет контакта",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a contact": {
+      "main": [
+        []
+      ]
+    },
+    "Нет контакта": {
+      "main": [
+        [
+          {
+            "node": "Create a contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Есть контакт": {
+      "main": [
+        [
+          {
+            "node": "Update a contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Есть контакт1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Нет контакта2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Есть контакт1": {
+      "main": [
+        [
+          {
+            "node": "Update a contact1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Нет контакта2": {
+      "main": [
+        [
+          {
+            "node": "Create a contact1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "157990 Vibe": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "143102 chatGPT": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "9029f3f9-471d-4a87-956c-b1a1ef24981c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "66a195d263b6b75f5cc2ab03beb8a190c92ab4b01a51d8ebc4796204925a864a"
+  },
+  "id": "0fjM4yphIjNNpu8M",
+  "tags": []
+}

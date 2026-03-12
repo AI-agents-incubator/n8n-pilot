@@ -9,7 +9,7 @@ export default defineConfig({
 
   use: {
     headless: false, // Extensions require headed mode
-    viewport: { width: 420, height: 600 },
+    viewport: { width: 1280, height: 800 },
   },
 
   projects: [

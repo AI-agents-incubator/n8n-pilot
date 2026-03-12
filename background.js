@@ -10,6 +10,7 @@ import * as generator from './lib/workflow-generator.js';
 import * as promptAnalyzer from './lib/prompt-analyzer.js';
 import * as history from './lib/history.js';
 import * as versions from './lib/versions.js';
+import * as templateSearch from './lib/template-search.js';
 
 // Active generation abort controller
 let generationController = null;
@@ -424,17 +425,61 @@ async function handleMessage(msg, sender) {
       await history.markInjected(msg.id, msg.n8nWorkflowId);
       return { success: true };
 
+    // === Template Search ===
+    case 'searchTemplates': {
+      const tsSettings = await settings.getAll();
+      return templateSearch.searchTemplates({ ...msg, baseUrl: tsSettings.templateServerUrl });
+    }
+
+    case 'getTemplate': {
+      const tsSettings2 = await settings.getAll();
+      return templateSearch.getTemplate(msg.filename, tsSettings2.templateServerUrl);
+    }
+
+    case 'checkTemplateServer': {
+      const tsSettings3 = await settings.getAll();
+      return { available: await templateSearch.isTemplateServerAvailable(tsSettings3.templateServerUrl) };
+    }
+
+    case 'getTemplateDiagram': {
+      const tsSettings4 = await settings.getAll();
+      return { diagram: await templateSearch.getDiagram(msg.filename, tsSettings4.templateServerUrl) };
+    }
+
+    case 'getTemplateCategories': {
+      const tsSettings5 = await settings.getAll();
+      return templateSearch.getCategories(tsSettings5.templateServerUrl);
+    }
+
+    case 'getTemplateStats': {
+      const tsSettings6 = await settings.getAll();
+      return templateSearch.getStats(tsSettings6.templateServerUrl);
+    }
+
+    case 'getIntegrations': {
+      const tsSettings7 = await settings.getAll();
+      return templateSearch.getIntegrations(tsSettings7.templateServerUrl);
+    }
+
     // === Prompt Analysis ===
     case 'analyzePrompt':
       return promptAnalyzer.analyze(msg.prompt);
 
     case 'generateFromBlueprint': {
+      // Search matching templates before generation (non-blocking)
+      const currentSettingsForTemplates = await settings.getAll();
+      const matchedTemplates = await templateSearch.findTemplates(msg.blueprint, {
+        baseUrl: currentSettingsForTemplates.templateServerUrl,
+        limit: 3,
+      }).catch(() => []);
+
       generationController = new AbortController();
       const blueprintResult = await generator.generateFromBlueprint({
         blueprint: msg.blueprint,
         prompt: msg.prompt,
         model: msg.model,
         abortSignal: generationController.signal,
+        templates: matchedTemplates,
       });
       generationController = null;
 

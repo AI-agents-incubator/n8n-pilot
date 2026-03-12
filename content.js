@@ -37,7 +37,10 @@
     `;
 
     // Attach Shadow DOM — use open mode in test mode for E2E access
-    const shadowMode = window.__N8N_PILOT_TEST_MODE__ ? 'open' : 'closed';
+    // Check DOM attribute (shared with content scripts) or window variable (same-world)
+    const isTestMode = document.documentElement.dataset.n8nPilotTestMode === 'true'
+      || window.__N8N_PILOT_TEST_MODE__;
+    const shadowMode = isTestMode ? 'open' : 'closed';
     _shadowRoot = _panelHost.attachShadow({ mode: shadowMode });
 
     // Load CSS

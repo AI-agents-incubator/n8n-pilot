@@ -1,0 +1,284 @@
+{
+  "name": "MacWhisper Transcript Processor",
+  "nodes": [
+    {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "transcript-processor",
+      "parameters": {
+        "path": "transcript-processor",
+        "httpMethod": "POST",
+        "responseMode": "lastNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "Fragment Selection",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        550,
+        300
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gemini-2.0-flash-exp",
+          "mode": "list",
+          "cachedResultName": "gemini-2.0-flash-exp"
+        },
+        "options": {
+          "systemMessage": "You are an expert content analyzer. Your task is to analyze podcast/stream transcripts and identify the 3-5 most engaging, emotional, or impactful fragments.\n\nFor each fragment, provide:\n- Start timecode in [HH:MM] format\n- End timecode in [HH:MM] format\n- Brief reason why this fragment is engaging\n\nFormat your response EXACTLY as:\n[HH:MM] -- [HH:MM]: Brief description of why this fragment is engaging\n\nSeparate each fragment with a blank line. Focus on moments with high emotional impact, insights, humor, or controversy."
+        },
+        "prompt": "=Analyze this transcript and identify the 3-5 most engaging fragments:\n\nTitle: {{ $json.body.title }}\n\nTranscript:\n{{ $json.body.transcript }}"
+      }
+    },
+    {
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "name": "Get Fragment Text",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gemini-2.0-flash-exp",
+          "mode": "list",
+          "cachedResultName": "gemini-2.0-flash-exp"
+        },
+        "options": {
+          "systemMessage": "You are a precise transcript extractor. Your task is to extract the EXACT verbatim text for each fragment based on the provided timecodes.\n\nFor each fragment, output:\n[START_TIME] -- [END_TIME]\nEXACT VERBATIM TEXT FROM TRANSCRIPT\n---\n\nSeparate each fragment with '---' on its own line. Preserve all speaker names, pauses, and exact wording from the original transcript."
+        },
+        "prompt": "=Extract the exact verbatim text for these fragments from the transcript:\n\nFragments to extract:\n{{ $('Fragment Selection').item.json.message.content }}\n\nFull transcript:\n{{ $('Webhook').item.json.body.transcript }}\n\nProvide the exact text for each fragment, separated by '---'"
+      }
+    },
+    {
+      "id": "d4e5f6a7-b8c9-0123-def1-234567890123",
+      "name": "Split Fragments",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1150,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const fragmentText = $input.item.json.message.content;\n\n// Split by --- delimiter\nconst fragments = fragmentText.split('---').filter(f => f.trim());\n\n// Parse each fragment\nconst parsedFragments = fragments.map((fragment, index) => {\n  const trimmed = fragment.trim();\n  \n  // Extract timecodes using regex [HH:MM] -- [HH:MM]\n  const timecodeMatch = trimmed.match(/\\[(\\d{2}:\\d{2})\\]\\s*--\\s*\\[(\\d{2}:\\d{2})\\]/);\n  \n  if (!timecodeMatch) {\n    return null;\n  }\n  \n  const start = timecodeMatch[1];\n  const end = timecodeMatch[2];\n  \n  // Extract content (everything after the timecode line)\n  const contentStart = trimmed.indexOf('\\n', timecodeMatch.index);\n  const content = contentStart !== -1 ? trimmed.substring(contentStart + 1).trim() : '';\n  \n  return {\n    json: {\n      fragmentIndex: index + 1,\n      start: start,\n      end: end,\n      content: content,\n      timecodeRange: `${start} -- ${end}`\n    }\n  };\n}).filter(f => f !== null);\n\nreturn parsedFragments;"
+      }
+    },
+    {
+      "id": "e5f6a7b8-c9d0-1234-ef12-345678901234",
+      "name": "Create Subtitles",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        200
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gemini-2.0-flash-exp",
+          "mode": "list",
+          "cachedResultName": "gemini-2.0-flash-exp"
+        },
+        "options": {
+          "systemMessage": "You are an expert subtitle creator. Convert the provided text into SRT subtitle format.\n\nRules:\n- Use ~140 words per minute timing\n- Each subtitle should be 1-2 lines maximum\n- Start from 00:00:00,000\n- Use proper SRT format:\n1\n00:00:00,000 --> 00:00:03,000\nFirst subtitle text\n\n2\n00:00:03,000 --> 00:00:06,000\nSecond subtitle text\n\nProvide ONLY the SRT content, nothing else."
+        },
+        "prompt": "=Convert this text into SRT subtitle format at ~140 words per minute:\n\n{{ $json.content }}"
+      }
+    },
+    {
+      "id": "f6a7b8c9-d0e1-2345-f123-456789012345",
+      "name": "Convert to SRT",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1750,
+        200
+      ],
+      "parameters": {
+        "mode": "jsonToText",
+        "options": {
+          "fileName": "=fragment_{{ $json.fragmentIndex }}.srt",
+          "mimeType": "text/plain"
+        },
+        "jsonToText": {
+          "inputDataFieldName": "={{ $('Create Subtitles').item.json.message.content }}"
+        }
+      }
+    },
+    {
+      "id": "a7b8c9d0-e1f2-3456-1234-567890123456",
+      "name": "Edit Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1450,
+        400
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b8c9d0e1-f2a3-4567-2345-678901234567",
+              "name": "formattedText",
+              "value": "=Fragment {{ $json.fragmentIndex }}\nTimecode: {{ $json.timecodeRange }}\n\n{{ $json.content }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b8c9d0e1-f2a3-4567-2345-678901234567",
+      "name": "Convert to TXT",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1750,
+        400
+      ],
+      "parameters": {
+        "mode": "jsonToText",
+        "options": {
+          "fileName": "=timecodes_{{ $json.fragmentIndex }}.txt",
+          "mimeType": "text/plain"
+        },
+        "jsonToText": {
+          "inputDataFieldName": "={{ $json.formattedText }}"
+        }
+      }
+    },
+    {
+      "id": "c9d0e1f2-a3b4-5678-3456-789012345678",
+      "name": "Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2050,
+        200
+      ],
+      "parameters": {
+        "operation": "send",
+        "sendTo": "={{ $('Webhook').item.json.body.email || 'user@example.com' }}",
+        "subject": "=Fragments - {{ $('Webhook').item.json.body.title }}",
+        "message": "=Please find attached the SRT subtitle file for fragment {{ $json.fragmentIndex }}.\n\nTimecode: {{ $('Split Fragments').item.json.timecodeRange }}\n\nThis fragment was selected as one of the most engaging moments from the transcript.",
+        "options": {
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "data"
+              }
+            ]
+          }
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "1",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fragment Selection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fragment Selection": {
+      "main": [
+        [
+          {
+            "node": "Get Fragment Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Fragment Text": {
+      "main": [
+        [
+          {
+            "node": "Split Fragments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Fragments": {
+      "main": [
+        [
+          {
+            "node": "Create Subtitles",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Subtitles": {
+      "main": [
+        [
+          {
+            "node": "Convert to SRT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to SRT": {
+      "main": [
+        [
+          {
+            "node": "Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Convert to TXT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

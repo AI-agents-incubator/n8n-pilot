@@ -1,0 +1,1249 @@
+{
+  "name": "rss_app_Twitter_AI_feed__196267257",
+  "nodes": [
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "let raw = item.json.contentSnippet || \"\";          // ← здесь\n// (если literal \"\\n\" нужно конвертировать, сделайте .split(\"\\\\n\").join(\"\\n\") )\nlet cleaned = raw\n  .replace(/https?:\\/\\/\\S+/g, \"\")                  // ссылки\n  .replace(/#[\\w\\d_]+/g, \"\")                       // хэштеги\n  .replace(/@[\\w\\d_]+/g, \"\")                       // упоминания\n  .replace(/[ \\t]{2,}/g, \" \")                      // лишние пробелы\n  .replace(/\\n{3,}/g, \"\\n\\n\")                      // >2 пустых строк → 1\n  .trim();\n\n// сохраняем обратно в тот же key\nitem.json.contentSnippet = cleaned;                // ← и здесь\n\nreturn item;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        96
+      ],
+      "id": "055761e7-a5cc-4863-9493-319feb9c421b",
+      "name": "Удаление мусора"
+    },
+    {
+      "parameters": {
+        "chatId": "196267257",
+        "text": "=<b>Оригинальный Твит:</b> {{ $('Перевод').item.json.choices[0].message.content }} - {{ $('Твит').item.json.link }}\n\n<b>Разбор:</b> {{ $json.choices[0].message.content }}\n\n<b>Лента AI Feed:</b> Те, кто пытаются что-то делать руками и иногда можно найти что-то полезное: https://x.com/i/lists/1936350052194386241\n\nПоток: n8n:rss.app_Twitter_AI_feeds->196267257",
+        "replyMarkup": "forceReply",
+        "forceReply": {},
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1312,
+        96
+      ],
+      "id": "bd6fd79e-4cbf-4e56-bb17-e06e11aa60f3",
+      "name": "Телеграм",
+      "webhookId": "abf5d929-172a-4000-971b-dac137dfb52c"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "43470c2a-f4bd-430f-8496-bf42ff2a3292",
+              "leftValue": "={{ $json.title }}",
+              "rightValue": "RT @",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        -272,
+        -384
+      ],
+      "id": "2ec52b9e-74f0-450e-ac9b-e0cb6b796183",
+      "name": "Да \"RT @"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "43470c2a-f4bd-430f-8496-bf42ff2a3292",
+              "leftValue": "={{ $json.title }}",
+              "rightValue": "@",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "9910f0ec-f0c5-405f-b7db-0aa6f8f6b127",
+              "leftValue": "={{ $json.title }}",
+              "rightValue": "RT @",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        -272,
+        -144
+      ],
+      "id": "ee146dfc-8b1a-4c4e-9293-3196b9705cb2",
+      "name": "Да \"@"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "43470c2a-f4bd-430f-8496-bf42ff2a3292",
+              "leftValue": "={{ $json.title }}",
+              "rightValue": "@",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            },
+            {
+              "id": "7e0bd6c3-e865-48bb-94dc-66aabd23e490",
+              "leftValue": "={{ $json.title }}",
+              "rightValue": "RT @",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        -272,
+        96
+      ],
+      "id": "166c57b6-7a28-4140-960e-62297bb1b3b2",
+      "name": "Твит"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// 1) исходный текст\nconst raw = item.json.contentSnippet || \"\";\n\n// 2) чистка\nlet text = raw\n  .split(\"\\\\n\").join(\"\\n\")\n  .replace(/<[^>]+>/g, \"\")\n  .replace(/\\[https?:\\/\\/[^\\]]+\\]/g, \"\")\n  .replace(/https?:\\/\\/\\S+/g, \"\")\n  .replace(/pic\\.twitter\\.com\\/\\S+/gi, \"\") // убираем pic.twitter.com/…\n  .replace(/#[\\w\\d_]+/g, \"\")\n  .replace(/@[\\w\\d_]+/g, \"\")\n  .replace(/[ \\t]{2,}/g, \" \")\n  .replace(/\\n{3,}/g, \"\\n\\n\")\n  .trim();\n\n// 3) пишем обратно и возвращаем\nitem.json.contentSnippet = text;\nreturn item;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        96
+      ],
+      "id": "5fba1329-1366-4e8d-8322-25417b3f3851",
+      "name": "replace(/cc:\\s*pic"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "chatgpt-4o-latest",
+          "mode": "list",
+          "cachedResultName": "CHATGPT-4O-LATEST"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "Translate this into Russian as accurately as possible, taking into account the contexts",
+              "role": "system"
+            },
+            {
+              "content": "={{ $json.contentSnippet }}"
+            }
+          ]
+        },
+        "simplify": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        480,
+        96
+      ],
+      "id": "10217543-82c3-4368-b6a6-4263d40df34c",
+      "name": "Перевод"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "chatgpt-4o-latest",
+          "mode": "list",
+          "cachedResultName": "CHATGPT-4O-LATEST"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "Analyze this text and try to comment on what is meant here and how it relates to the ability to create something. Are these new opportunities or threats? The final text should not exceed approximately 1000 characters or approximately 200 words.",
+              "role": "system"
+            },
+            {
+              "content": "={{ $json.choices[0].message.content }}"
+            }
+          ]
+        },
+        "simplify": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        896,
+        96
+      ],
+      "id": "a82c5b3e-8cd1-472e-b6a9-a9b9c792f255",
+      "name": "Комментарий"
+    },
+    {
+      "parameters": {
+        "content": "Получатель - -1001381692730 - КвестТКР_Чат",
+        "height": 97,
+        "width": 636,
+        "color": 7
+      },
+      "id": "c3831235-f0d4-4956-af07-6c3f2bf3153c",
+      "name": "Sticky Note7",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        96,
+        -320
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "app5VGioZdapp729W",
+          "mode": "list",
+          "cachedResultName": "Агент",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblbWGPI4WUCdZBX8",
+          "mode": "list",
+          "cachedResultName": "Trinity_raw_Input_1",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W/tblbWGPI4WUCdZBX8"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Title": "={{ $('rss.app_').item.json.title }}",
+            "Content": "={{ $('rss.app_').item.json.contentSnippet }}",
+            "Date": "={{ $json.pubDate }}",
+            "origin_URL": "={{ $('rss.app_').item.json.link }}",
+            "Feed": "AI_Feed",
+            "Tech": "n8n",
+            "my_ID": "={{ $json.guid }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "my_ID",
+              "displayName": "my_ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Quality",
+              "displayName": "Quality",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Feed",
+              "displayName": "Feed",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "AI-eval",
+              "displayName": "AI-eval",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Tech",
+              "displayName": "Tech",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "AI_expain",
+              "displayName": "AI_expain",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Last Modified",
+              "displayName": "Last Modified",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Content",
+              "displayName": "Content",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Description",
+              "displayName": "Description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Created",
+              "displayName": "Created",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "origin_URL",
+              "displayName": "origin_URL",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Topics",
+              "displayName": "Topics",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Keywords",
+              "displayName": "Keywords",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "options": [],
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -928,
+        624
+      ],
+      "id": "591c7957-dbeb-4762-838b-65bad3e3f20f",
+      "name": "Airtable"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {}
+          ]
+        },
+        "feedUrl": "https://rss.app/feeds/BUxLtPfKTfrpPTzr.xml"
+      },
+      "type": "n8n-nodes-base.rssFeedReadTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1488,
+        -144
+      ],
+      "id": "47c6db6c-3f0d-43ab-8e5d-0f860c7bba2c",
+      "name": "rss.app_"
+    },
+    {
+      "parameters": {
+        "resource": "assistant",
+        "assistantId": {
+          "__rl": true,
+          "value": "asst_RTPQWJGSBCxvaHQvzh5uxTNV",
+          "mode": "list",
+          "cachedResultName": "Feed_Filter"
+        },
+        "prompt": "define",
+        "text": "={{ $json.fields.Content }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -576,
+        624
+      ],
+      "id": "6517b731-9e4e-44fe-81fe-f1553c88632b",
+      "name": "4. Саммари1",
+      "notesInFlow": true,
+      "notes": "4.1nano"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d72b0096-6bb1-4b96-8cbe-ed64a2af5881",
+              "leftValue": "={{ $json.output }}",
+              "rightValue": "Good",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        80,
+        416
+      ],
+      "id": "5ea9bc83-8b87-436a-8980-05f1de1ce554",
+      "name": "Good"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d72b0096-6bb1-4b96-8cbe-ed64a2af5881",
+              "leftValue": "={{ $json.output }}",
+              "rightValue": "Bad",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        80,
+        720
+      ],
+      "id": "7a3dff30-605e-452f-abae-15cde19d65de",
+      "name": "Bad"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "app5VGioZdapp729W",
+          "mode": "list",
+          "cachedResultName": "Агент",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblbWGPI4WUCdZBX8",
+          "mode": "list",
+          "cachedResultName": "Trinity_raw_Input_1",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W/tblbWGPI4WUCdZBX8"
+        },
+        "filterByFormula": "={my_ID} = \"{{ $('Airtable').item.json.fields.my_ID }}\"",
+        "returnAll": false,
+        "limit": 1,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        368,
+        416
+      ],
+      "id": "63ee9596-4aee-4ee1-900b-5a20b012054b",
+      "name": "SearchGood"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "app5VGioZdapp729W",
+          "mode": "list",
+          "cachedResultName": "Агент",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblbWGPI4WUCdZBX8",
+          "mode": "list",
+          "cachedResultName": "Trinity_raw_Input_1",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W/tblbWGPI4WUCdZBX8"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "AI-eval": "Bad",
+            "AI_expain": "={{ $('4. Саммари1').item.json.output }}",
+            "my_ID": "={{ $json.my_ID }}"
+          },
+          "matchingColumns": [
+            "my_ID"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "my_ID",
+              "displayName": "my_ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Quality",
+              "displayName": "Quality",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Feed",
+              "displayName": "Feed",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "AI-eval",
+              "displayName": "AI-eval",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Tech",
+              "displayName": "Tech",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "AI_expain",
+              "displayName": "AI_expain",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Last Modified",
+              "displayName": "Last Modified",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Content",
+              "displayName": "Content",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Description",
+              "displayName": "Description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Created",
+              "displayName": "Created",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "origin_URL",
+              "displayName": "origin_URL",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Topics",
+              "displayName": "Topics",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Keywords",
+              "displayName": "Keywords",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "options": [],
+              "readOnly": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": false
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        656,
+        416
+      ],
+      "id": "85417ace-6d2b-409c-937f-dd8379acaeb8",
+      "name": "UpdateGood"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "app5VGioZdapp729W",
+          "mode": "list",
+          "cachedResultName": "Агент",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblbWGPI4WUCdZBX8",
+          "mode": "list",
+          "cachedResultName": "Trinity_raw_Input_1",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W/tblbWGPI4WUCdZBX8"
+        },
+        "filterByFormula": "={my_ID} = \"{{ $('Airtable').item.json.fields.my_ID }}\"",
+        "returnAll": false,
+        "limit": 1,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        352,
+        720
+      ],
+      "id": "f0338774-4464-4747-8363-a6ca093a30fc",
+      "name": "SearchBad"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "app5VGioZdapp729W",
+          "mode": "list",
+          "cachedResultName": "Агент",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblbWGPI4WUCdZBX8",
+          "mode": "list",
+          "cachedResultName": "Trinity_raw_Input_1",
+          "cachedResultUrl": "https://airtable.com/app5VGioZdapp729W/tblbWGPI4WUCdZBX8"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "AI-eval": "Bad",
+            "AI_expain": "={{ $('4. Саммари1').item.json.output }}",
+            "my_ID": "={{ $json.my_ID }}"
+          },
+          "matchingColumns": [
+            "my_ID"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "my_ID",
+              "displayName": "my_ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Quality",
+              "displayName": "Quality",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Feed",
+              "displayName": "Feed",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "AI-eval",
+              "displayName": "AI-eval",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Tech",
+              "displayName": "Tech",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "AI_expain",
+              "displayName": "AI_expain",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Last Modified",
+              "displayName": "Last Modified",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Content",
+              "displayName": "Content",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Description",
+              "displayName": "Description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Created",
+              "displayName": "Created",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "origin_URL",
+              "displayName": "origin_URL",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Topics",
+              "displayName": "Topics",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Keywords",
+              "displayName": "Keywords",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "options": [],
+              "readOnly": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": false
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        656,
+        720
+      ],
+      "id": "d18a4b3d-2bfe-42d2-8d9f-85402b87418b",
+      "name": "UpdateBad"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Удаление мусора": {
+      "main": [
+        [
+          {
+            "node": "replace(/cc:\\s*pic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Твит": {
+      "main": [
+        [
+          {
+            "node": "Удаление мусора",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "replace(/cc:\\s*pic": {
+      "main": [
+        [
+          {
+            "node": "Перевод",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Перевод": {
+      "main": [
+        [
+          {
+            "node": "Комментарий",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Комментарий": {
+      "main": [
+        [
+          {
+            "node": "Телеграм",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable": {
+      "main": [
+        [
+          {
+            "node": "4. Саммари1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "rss.app_": {
+      "main": [
+        [
+          {
+            "node": "Airtable",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Да \"RT @",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Да \"@",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Твит",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Саммари1": {
+      "main": [
+        [
+          {
+            "node": "Good",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Bad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Good": {
+      "main": [
+        [
+          {
+            "node": "SearchGood",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bad": {
+      "main": [
+        [
+          {
+            "node": "SearchBad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SearchGood": {
+      "main": [
+        [
+          {
+            "node": "UpdateGood",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SearchBad": {
+      "main": [
+        [
+          {
+            "node": "UpdateBad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "6ecee3c2-8357-4022-840b-dc94d373c403",
+  "meta": {
+    "instanceId": "66a195d263b6b75f5cc2ab03beb8a190c92ab4b01a51d8ebc4796204925a864a"
+  },
+  "id": "5WvvmCODYKOuXPoZ",
+  "tags": []
+}
