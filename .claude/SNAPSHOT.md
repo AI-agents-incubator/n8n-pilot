@@ -1,6 +1,6 @@
 # SNAPSHOT — n8n Pilot
 
-**Version:** 2.2.0 | **Phase:** Phase 6 Complete | **Progress:** 100%
+**Version:** 2.3.0 | **Phase:** Phase 6 Complete | **Progress:** 100%
 
 ## Project
 Chrome Extension (Manifest V3) — AI-powered n8n workflow manager with Claude API integration.
@@ -34,23 +34,21 @@ model actualizer, template library integration. Fully local, privacy-first.
 - ✅ Template search: finds matching templates, shows badge before generation
 - ✅ Parameter format fixes: OpenAI (modelId+messages), IF/Filter (typeValidation+version)
 - ✅ 55+ platform detection in prompt analyzer
+- ✅ Preflight validation: detects missing parameters, shows interactive Q&A card
 - ✅ Clarifying questions: Claude asks before generating placeholders
 - ✅ Copy Dialog: one-click conversation export to clipboard
 - ✅ Error action cards: guided error recovery (Open Settings)
 - ✅ Workflow delta: shows node count changes on re-generation
 - ✅ Privacy controls: history toggle + full data reset
-- ✅ 415 unit tests passing (14 test files)
+- ✅ 438 unit tests passing (15 test files)
 - ✅ E2E + acceptance test infrastructure
 
-## Recent Work (v2.2.0)
-- Multi-turn conversation: sends up to 20 previous messages to Claude for context
-- System prompt rewrite: clarifying questions, no tutorials, incremental edits
-- Error action cards with "Open Settings" button for API key errors
-- Template search badge ("📎 N templates found") shown before generation
-- Workflow card delta ("+2 nodes" / "-1 node") on re-generation
-- Copy Dialog button for full conversation clipboard export
-- Security audit fixes: streaming pipeline, privacy controls, double-parse crash
-- Token count display fix (object → number)
+## Recent Work (v2.3.0)
+- Preflight validation: programmatic blueprint analysis before generation
+  - Detects missing critical params for 12 node types (URLs, chat IDs, emails, intervals)
+  - Scans user prompt to auto-skip questions when info already provided
+  - Interactive card with inputs, Skip & Generate / Generate buttons
+- 23 new preflight tests (438 total)
 
 ## Tech Stack
 Vanilla JS (ES modules) | Chrome Extension MV3 | Anthropic API | n8n REST API | Vitest | Playwright

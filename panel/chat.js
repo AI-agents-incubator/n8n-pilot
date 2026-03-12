@@ -328,12 +328,139 @@ function initChat($, _msg, options = {}) {
     });
   }
 
+  // --- Preflight Q&A Card ---
+
+  function handlePreflightQuestions(data) {
+    isStreaming = false;
+    if (abortBtn) abortBtn.classList.add('hidden');
+    options.stopKeepAlive?.();
+
+    if (currentAssistantBubble) {
+      currentAssistantBubble.remove();
+      currentAssistantBubble = null;
+    }
+    streamFullText = '';
+
+    const { questions, blueprint } = data;
+
+    const card = document.createElement('div');
+    card.className = 'preflight-card';
+
+    const nodeChain = blueprint.nodes.length > 0
+      ? `${_escapeHtml(blueprint.trigger)} \u2192 ${blueprint.nodes.map(n => _escapeHtml(n)).join(' \u2192 ')}`
+      : _escapeHtml(blueprint.trigger);
+
+    let questionsHtml = '';
+    questions.forEach((q, i) => {
+      questionsHtml += `
+        <div class="form-group preflight-field">
+          <label for="preflight-input-${i}">${_escapeHtml(q.label)} <span class="preflight-node-hint">(${_escapeHtml(q.nodeName)})</span></label>
+          <input type="text" id="preflight-input-${i}" class="form-input preflight-input"
+            placeholder="${_escapeHtml(q.placeholder)}"
+            data-field-label="${_escapeHtml(q.label)}"
+            data-field-name="${_escapeHtml(q.field)}">
+        </div>`;
+    });
+
+    card.innerHTML = `
+      <div class="preflight-header">
+        <span class="preflight-icon">\ud83d\udccb</span>
+        <span class="preflight-title">Workflow Plan</span>
+      </div>
+      <div class="preflight-summary">
+        <div class="preflight-row">
+          <span class="preflight-label">Trigger:</span>
+          <span class="preflight-value">${_escapeHtml(blueprint.trigger)}</span>
+        </div>
+        <div class="preflight-row">
+          <span class="preflight-label">Nodes:</span>
+          <span class="preflight-value">${nodeChain}</span>
+        </div>
+        <div class="preflight-row">
+          <span class="preflight-label">Complexity:</span>
+          <span class="preflight-value">${_escapeHtml(blueprint.complexity)}</span>
+        </div>
+        ${blueprint.templateCount > 0 ? `
+        <div class="preflight-row">
+          <span class="preflight-label">Templates:</span>
+          <span class="preflight-value">${blueprint.templateCount} found</span>
+        </div>` : ''}
+      </div>
+      <div class="preflight-questions-header">Missing details:</div>
+      ${questionsHtml}
+      <div class="preflight-actions">
+        <button class="btn btn-secondary btn-sm btn-preflight-skip">Skip &amp; Generate</button>
+        <button class="btn btn-primary btn-sm btn-preflight-submit">Generate</button>
+      </div>
+    `;
+
+    const skipBtn = card.querySelector('.btn-preflight-skip');
+    const submitBtn = card.querySelector('.btn-preflight-submit');
+
+    function collectAnswers() {
+      const answers = {};
+      card.querySelectorAll('.preflight-input').forEach(input => {
+        const label = input.dataset.fieldLabel;
+        const value = input.value.trim();
+        if (label && value) {
+          answers[label] = value;
+        }
+      });
+      return answers;
+    }
+
+    function submitPreflight(answers) {
+      if (skipBtn) skipBtn.disabled = true;
+      if (submitBtn) submitBtn.disabled = true;
+
+      const userBubbles = chatMessages.querySelectorAll('.chat-bubble.user');
+      const lastUserText = userBubbles.length > 0
+        ? userBubbles[userBubbles.length - 1].textContent.trim()
+        : '';
+
+      startStreaming();
+
+      _msg('generateWithPreflight', {
+        prompt: lastUserText,
+        answers,
+      }).catch(err => {
+        finishStreaming(`Error: ${err.message}`);
+      });
+    }
+
+    if (skipBtn) {
+      skipBtn.addEventListener('click', () => submitPreflight({}));
+    }
+    if (submitBtn) {
+      submitBtn.addEventListener('click', () => submitPreflight(collectAnswers()));
+    }
+
+    const inputs = card.querySelectorAll('.preflight-input');
+    if (inputs.length > 0) {
+      inputs[inputs.length - 1].addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          submitBtn?.click();
+        }
+      });
+    }
+
+    chatMessages.appendChild(card);
+    scrollToBottom();
+
+    const firstInput = card.querySelector('.preflight-input');
+    if (firstInput) {
+      requestAnimationFrame(() => firstInput.focus());
+    }
+  }
+
   // Return handlers for stream events (called by content.js message listener)
   return {
     handleChunk,
     handleStreamDone,
     handleStreamError,
     appendMessage,
+    handlePreflightQuestions,
   };
 }
 

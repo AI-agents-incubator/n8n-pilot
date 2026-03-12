@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "n8n Pilot",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "AI-powered n8n workflow manager with Claude integration. Fully local, no external servers.",
   "author": "Alex Krol",
   "permissions": [

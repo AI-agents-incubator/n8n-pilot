@@ -1,6 +1,6 @@
 # n8n Pilot
 
-![Version](https://img.shields.io/badge/version-2.2.0-blue)
+![Version](https://img.shields.io/badge/version-2.3.0-blue)
 ![Chrome Extension](https://img.shields.io/badge/chrome-Manifest%20V3-green)
 ![Tests](https://img.shields.io/badge/tests-415%20passing-brightgreen)
 ![Node](https://img.shields.io/badge/node-18%2B-339933)

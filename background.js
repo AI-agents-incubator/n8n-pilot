@@ -11,6 +11,7 @@ import * as promptAnalyzer from './lib/prompt-analyzer.js';
 import * as history from './lib/history.js';
 import * as versions from './lib/versions.js';
 import * as templateSearch from './lib/template-search.js';
+import * as preflight from './lib/preflight.js';
 
 // Active generation abort controller
 let generationController = null;
@@ -249,9 +250,8 @@ async function handleMessage(msg, sender) {
       const conversationMessages = stored.slice(-MAX_HISTORY)
         .filter(m => m.role === 'user' || m.role === 'assistant')
         .map(m => ({ role: m.role, content: m.content }));
-      conversationMessages.push({ role: 'user', content: msg.prompt });
 
-      // Smart pipeline: analyze prompt → find templates → build enhanced prompt
+      // Smart pipeline: analyze prompt → find templates → preflight → build enhanced prompt
       const streamBlueprint = promptAnalyzer.analyze(msg.prompt);
       const streamTemplates = await templateSearch.findTemplates(streamBlueprint, {
         baseUrl: streamSettings.templateServerUrl,
@@ -265,6 +265,34 @@ async function handleMessage(msg, sender) {
           count: streamTemplates.length,
         }).catch(() => {});
       }
+
+      // Preflight validation: check for missing critical parameters
+      const preflightResult = preflight.validate(streamBlueprint, msg.prompt);
+
+      if (!preflightResult.complete && !msg.preflightAnswers) {
+        // Missing info — send questions to UI, DON'T generate yet
+        if (activeStreamTabId) {
+          chrome.tabs.sendMessage(activeStreamTabId, {
+            type: 'PREFLIGHT_QUESTIONS',
+            questions: preflightResult.questions,
+            summary: preflightResult.summary,
+            blueprint: {
+              trigger: streamBlueprint.trigger?.name || 'Manual Trigger',
+              nodes: streamBlueprint.nodes.map(n => n.name),
+              complexity: streamBlueprint.complexity,
+              templateCount: streamTemplates.length,
+            },
+          }).catch(() => {});
+        }
+        activeStreamTabId = null;
+        return { success: true, preflight: true };
+      }
+
+      // Build effective prompt (with preflight answers if provided)
+      const effectivePrompt = msg.preflightAnswers
+        ? _buildPreflightPrompt(msg.prompt, msg.preflightAnswers)
+        : msg.prompt;
+      conversationMessages.push({ role: 'user', content: effectivePrompt });
 
       const streamSystemPrompt = generator.buildStreamingPrompt(
         streamBlueprint, streamTemplates, promptAnalyzer.buildEnhancedPrompt
@@ -327,6 +355,17 @@ async function handleMessage(msg, sender) {
       });
 
       return { success: true, streaming: true };
+    }
+
+    case 'generateWithPreflight': {
+      // Re-dispatch as generateWorkflowStream with preflight answers attached
+      return handleMessage({
+        action: 'generateWorkflowStream',
+        prompt: msg.prompt,
+        model: msg.model,
+        preflightAnswers: msg.answers,
+        workflowId: msg.workflowId,
+      }, sender);
     }
 
     case 'cancelGeneration':
@@ -638,4 +677,18 @@ async function handleMessage(msg, sender) {
     default:
       return { error: `Unknown action: ${action}` };
   }
+}
+
+/**
+ * Append preflight answers to original prompt as structured context.
+ */
+function _buildPreflightPrompt(originalPrompt, answers) {
+  const details = Object.entries(answers)
+    .filter(([, v]) => v && typeof v === 'string' && v.trim())
+    .map(([label, value]) => `- ${label}: ${value.trim()}`)
+    .join('\n');
+
+  if (!details) return originalPrompt;
+
+  return `${originalPrompt}\n\nUser-provided details:\n${details}`;
 }

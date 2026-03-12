@@ -9,6 +9,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-03-11
+
+### Added
+- Preflight validation (`lib/preflight.js`): programmatic analysis of blueprint completeness before generation
+  - Detects missing critical parameters (URLs, chat IDs, emails, intervals) for 12 node types
+  - Scans user prompt with regex patterns — skips questions when info already provided
+- Interactive Preflight Card in chat: shows workflow plan summary + input fields for missing details
+  - "Skip & Generate" bypasses preflight, "Generate" enriches prompt with user answers
+  - Auto-focuses first input, Enter on last input submits
+- `generateWithPreflight` background message handler for re-dispatching with enriched context
+- 23 new unit tests for preflight validation (438 total)
+
 ## [2.2.0] - 2026-03-11
 
 ### Added

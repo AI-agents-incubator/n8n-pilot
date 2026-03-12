@@ -1,6 +1,6 @@
 {
   "name": "n8n-pilot",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "AI-powered n8n workflow manager with Claude integration",
   "private": true,
   "type": "module",
