@@ -41,3 +41,5 @@ dist/
 *.pem
 *.key
 security/reports/
+.handoffs/local/
+.handoffs/*.local.md
